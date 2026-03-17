@@ -1,14 +1,85 @@
 import json
+import os
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
+import yaml
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from config import config
 from logger_setup import setup_logger
+
+# Ensure logs directory exists
+LOG_DIR = Path("logs/chats")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# Custom Dumper to force block scalar style (|- ) for multi-line strings
+class BlockStyleDumper(yaml.SafeDumper):
+    def represent_scalar(self, tag, value, style=None):
+        if tag == "tag:yaml.org,2002:str" and "\n" in value:
+            style = "|"
+        return super().represent_scalar(tag, value, style)
+
+
+def log_chat_interaction(session_id: str, request_data: dict, response_data: dict):
+    """Log the chat interaction to a session-specific YAML file."""
+    file_path = LOG_DIR / f"chat_{session_id}.yaml"
+
+    def normalize_newlines(d):
+        """Recursively normalize newlines in a dictionary/list."""
+        if isinstance(d, str):
+            # Also normalize multi-newlines to single ones if that's what's intended?
+            # No, user just said "duplicated" which usually means \r\n vs \n issues.
+            return d.replace("\r\n", "\n")
+        elif isinstance(d, dict):
+            return {k: normalize_newlines(v) for k, v in d.items()}
+        elif isinstance(d, list):
+            return [normalize_newlines(i) for i in d]
+        return d
+
+    # Normalize data before logging to avoid duplicated newlines (\r\r\n)
+    request_data = normalize_newlines(request_data)
+    response_data = normalize_newlines(response_data)
+
+    try:
+        if file_path.exists():
+            with open(file_path, "r", encoding="utf-8", newline="") as f:
+                content = f.read()
+                if content:
+                    data = yaml.safe_load(content) or {"chats": []}
+                else:
+                    data = {"chats": []}
+        else:
+            data = {"chats": []}
+
+        # Ensure "chats" key exists
+        if "chats" not in data:
+            data["chats"] = []
+
+        # Add the new interaction
+        data["chats"].append({"request": request_data, "response": response_data})
+
+        # Write back to the file
+        with open(file_path, "w", encoding="utf-8", newline="") as f:
+            yaml.dump(
+                data,
+                f,
+                Dumper=BlockStyleDumper,
+                allow_unicode=True,
+                sort_keys=False,
+                default_flow_style=False,
+            )
+
+        logger.debug(f"Logged interaction for session {session_id} to {file_path}")
+
+    except Exception as e:
+        logger.error(f"Failed to log interaction for session {session_id}: {str(e)}")
+
 
 # Initialize HTTP client with the base URL including /v1
 client = httpx.AsyncClient(base_url=config.BACKEND_URL, timeout=600.0)
@@ -72,6 +143,17 @@ async def proxy_v1_request(path: str, request: Request):
 
     logger.info(f"Session {session_id} | {method} /v1{url}")
 
+    # Prepare request data for logging
+    request_data = {
+        "method": method,
+        "path": f"v1{url}",
+        "protocol": f"HTTP/{request.scope.get('http_version', '1.1')}",
+        "headers": dict(request.headers),
+        "body": body_json
+        if body_json is not None
+        else content.decode("utf-8", errors="replace"),
+    }
+
     try:
         # Prepare backend request
         backend_request = client.build_request(
@@ -81,9 +163,33 @@ async def proxy_v1_request(path: str, request: Request):
         # Send backend request
         backend_response = await client.send(backend_request, stream=True)
 
+        # Intercept response stream to capture body for logging
+        response_chunks = []
+
+        async def response_stream_wrapper():
+            async for chunk in backend_response.aiter_raw():
+                response_chunks.append(chunk)
+                yield chunk
+
+            # After stream is exhausted, log the interaction
+            full_response_body = b"".join(response_chunks)
+            try:
+                response_body_json = json.loads(full_response_body)
+            except json.JSONDecodeError:
+                response_body_json = full_response_body.decode(
+                    "utf-8", errors="replace"
+                )
+
+            response_data = {
+                "status_code": backend_response.status_code,
+                "headers": dict(backend_response.headers),
+                "body": response_body_json,
+            }
+            log_chat_interaction(session_id, request_data, response_data)
+
         # Forward the response
         return StreamingResponse(
-            backend_response.aiter_raw(),
+            response_stream_wrapper(),
             status_code=backend_response.status_code,
             headers=dict(backend_response.headers),
         )
