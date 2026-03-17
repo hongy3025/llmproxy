@@ -20,8 +20,11 @@ def main():
     payload = {
         "model": "gpt-3.5-turbo",
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "Hello, how are you?"},
+            {
+                "role": "system",
+                "content": "你是一个快捷助手，专注于提供简洁、精准的回答。无需冗长解释或多步推理，直接给出最核心的信息或答案。保持高效，避免多余内容。",
+            },
+            {"role": "user", "content": "广州有哪些好玩的地方？"},
         ],
         "stream": False,
     }

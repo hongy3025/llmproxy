@@ -22,15 +22,6 @@ def setup_logger():
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
     )
     
-    # Add chat interactions log file handler
-    logger.add(
-        os.path.join(config.LOG_DIR, "chat_interactions.log"),
-        filter=lambda record: "chat_interaction" in record["extra"],
-        rotation="100 MB",
-        retention="1 month",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {message}"
-    )
-    
     logger.info(f"Logger initialized. Logs will be saved to {config.LOG_DIR}")
 
 setup_logger()
