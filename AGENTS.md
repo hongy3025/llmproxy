@@ -16,26 +16,26 @@
 
 项目使用 `uv` 进行依赖管理和任务执行：
 
-- **启动服务**：`uv run main.py`
+- **启动服务**：`uv run src/main.py`
 - **运行测试**：`uv run pytest`
 - **安装依赖**：`uv sync`
 - **添加依赖**：`uv add <package>`
 
 ## 架构
 
-项目采用 FastAPI 结合 `httpx` 的异步架构，核心逻辑位于 `main.py`：
+项目采用 FastAPI 结合 `httpx` 的异步架构，核心逻辑位于 `src/` 目录：
 
-1.  **FastAPI Entry Point** ([main.py](main.py)): 处理路由分发。
+1.  **FastAPI Entry Point** ([main.py](src/main.py)): 处理路由分发。
     - `/v1/{path:path}`: 主要代理接口，映射到后端 `/v1` 路径。
     - `/{path:path}`: 兜底接口，映射到后端根路径。
 2.  **Session Extraction**: 通过 `extract_session_id` 函数从 `X-Session-ID` Header 或 Body 中提取会话标识。
 3.  **Interaction Recording**:
     - **非流式**: 记录完整 JSON 请求/响应。
     - **流式**: 通过 `log_stream_response` 异步生成器，在分块传输的同时进行内容聚合，完成后一次性记入日志。
-4.  **Logging** ([logger_setup.py](file:///d:/AI/src/llmproxy/logger_setup.py)): 使用 `loguru` 进行分层日志管理。
+4.  **Logging** ([logger_setup.py](src/logger_setup.py)): 使用 `loguru` 进行分层日志管理。
     - `app.log`: 记录应用运行状态。
     - `chat_interactions.log`: 专门存储 JSON 格式的交互数据。
-5.  **Configuration** ([config.py](file:///d:/AI/src/llmproxy/config.py)): 通过 `.env` 文件或环境变量管理后端 URL、监听地址等。
+5.  **Configuration** ([config.py](src/config.py)): 通过 `.env` 文件或环境变量管理后端 URL、监听地址等。
 
 ## 代码注释标准
 
@@ -78,4 +78,4 @@
 - 需要 Python 3.12+
 - 测试位于 `tests/` 目录（如果存在），使用 pytest 并支持 asyncio
 - `.venv` 目录包含虚拟环境（请勿提交）
-- 环境变量配置直接修改 `.env` 文件，可参考 `config.py` 中的默认值
+- 环境变量配置直接修改 `.env` 文件，可参考 `src/config.py` 中的默认值
