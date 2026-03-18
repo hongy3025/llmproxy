@@ -115,16 +115,20 @@ def log_chat_interaction(session_id: str, request_data: dict, response_data: dic
         logger.error(f"Failed to log interaction for session {session_id}: {str(e)}")
 
 
-# Initialize HTTP client with the base URL including /v1
+# Initialize HTTP clients
 client = httpx.AsyncClient(base_url=config.BACKEND_URL, timeout=600.0)
+root_url = config.BACKEND_URL.rsplit("/v1", 1)[0]
+root_client = httpx.AsyncClient(base_url=root_url, timeout=600.0)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Proxying requests to: {config.BACKEND_URL}")
+    logger.info(f"Root proxying to: {root_url}")
     logger.info(f"Listening on: {config.LISTEN_HOST}:{config.LISTEN_PORT}")
     yield
     await client.aclose()
+    await root_client.aclose()
     logger.info("Proxy server shutting down.")
 
 
@@ -241,15 +245,16 @@ async def proxy_v1_request(path: str, request: Request):
 async def catch_all_request(path: str, request: Request):
     # This handles anything not starting with /v1
     # We'll proxy it to the root of the backend (one level above /v1)
-    root_url = config.BACKEND_URL.rsplit("/v1", 1)[0]
-    async with httpx.AsyncClient(base_url=root_url, timeout=600.0) as root_client:
-        url = f"/{path}"
-        method = request.method
-        headers = dict(request.headers)
-        if "host" in headers:
-            del headers["host"]
+    url = f"/{path}"
+    method = request.method
+    headers = dict(request.headers)
+    if "host" in headers:
+        del headers["host"]
 
-        content = await request.body()
+    logger.info(f"Catch-all | {method} {url}")
+
+    content = await request.body()
+    try:
         backend_request = root_client.build_request(
             method, url, content=content, headers=headers, params=request.query_params
         )
@@ -259,6 +264,9 @@ async def catch_all_request(path: str, request: Request):
             status_code=backend_response.status_code,
             headers=dict(backend_response.headers),
         )
+    except Exception as e:
+        logger.exception(f"Error in catch-all proxy for {url}: {str(e)}")
+        return Response(content=f"Proxy error: {str(e)}", status_code=500)
 
 
 if __name__ == "__main__":
