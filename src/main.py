@@ -8,6 +8,7 @@ import httpx
 import yaml
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import StreamingResponse
+from jinja2 import Environment, FileSystemLoader
 from loguru import logger
 
 from config import config
@@ -16,6 +17,39 @@ from logger_setup import setup_logger
 # Ensure logs directory exists
 LOG_DIR = Path("logs/chats")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# Initialize Jinja environment
+TEMPLATE_DIR = Path("chat-templates")
+jinja_env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+
+
+def render_chat_text(session_id: str, body_json: dict):
+    """Render chat messages using Jinja template and save to .txt file."""
+    if not body_json or "messages" not in body_json:
+        return
+
+    try:
+        template_name = "glm-4.7-flash.jinja"
+        template = jinja_env.get_template(template_name)
+
+        # Prepare context for the template
+        # Based on glm-4.7-flash.jinja, it expects 'messages', 'tools', 'add_generation_prompt' etc.
+        context = {
+            "messages": body_json.get("messages", []),
+            "tools": body_json.get("tools"),
+            "add_generation_prompt": body_json.get("add_generation_prompt", True),
+        }
+
+        rendered_text = template.render(**context)
+
+        # Save to logs/chats/chat_{session}.txt
+        txt_file_path = LOG_DIR / f"chat_{session_id}.txt"
+        with open(txt_file_path, "w", encoding="utf-8") as f:
+            f.write(rendered_text)
+
+        logger.debug(f"Rendered chat text for session {session_id} to {txt_file_path}")
+    except Exception as e:
+        logger.error(f"Failed to render chat text for session {session_id}: {str(e)}")
 
 
 # Custom Dumper to force block scalar style (|- ) for multi-line strings
@@ -142,6 +176,10 @@ async def proxy_v1_request(path: str, request: Request):
     session_id = await extract_session_id(request, body_json)
 
     logger.info(f"Session {session_id} | {method} /v1{url}")
+
+    # Render chat text using Jinja template if it's a chat completion request
+    if url == "/chat/completions" and body_json:
+        render_chat_text(session_id, body_json)
 
     # Prepare request data for logging
     request_data = {
