@@ -8,7 +8,7 @@
 
 ### 核心目标
 - **全透明转发**：无损转发所有 HTTP 方法、请求头及路径。
-- **会话感知的日志记录**：根据 `session_id` 自动归类聊天请求与响应。
+- **会话感知的日志记录**：根据 `session_id` 自动归类聊天请求与响应，生成 YAML 详细日志及可读 TXT 渲染。
 - **流式支持**：实时捕获并重组流式响应内容，而不破坏客户端的流式体验。
 - **高性能**：基于异步 I/O 构建，确保极低的代理延迟。
 
@@ -16,7 +16,7 @@
 
 项目使用 `uv` 进行依赖管理和任务执行：
 
-- **启动服务**：`uv run src/main.py`
+- **启动服务**：`uv run src/main.py` 或直接运行 `serve.cmd`
 - **运行测试**：`uv run pytest`
 - **安装依赖**：`uv sync`
 - **添加依赖**：`uv add <package>`
@@ -28,14 +28,21 @@
 1.  **FastAPI Entry Point** ([main.py](src/main.py)): 处理路由分发。
     - `/v1/{path:path}`: 主要代理接口，映射到后端 `/v1` 路径。
     - `/{path:path}`: 兜底接口，映射到后端根路径。
-2.  **Session Extraction**: 通过 `extract_session_id` 函数从 `X-Session-ID` Header 或 Body 中提取会话标识。
+2.  **Session Extraction**: 通过 `extract_session_id` 函数从 `X-Session-ID` Header、Body 或 `user` 字段中提取会话标识。
 3.  **Interaction Recording**:
-    - **非流式**: 记录完整 JSON 请求/响应。
-    - **流式**: 通过 `log_stream_response` 异步生成器，在分块传输的同时进行内容聚合，完成后一次性记入日志。
+    - **YAML 归档**: 记录完整请求/响应到 `logs/chats/{timestamp}_{session_id}.yaml`。
+    - **TXT 渲染**: 使用 [chat-templates/](chat-templates/) 中的 Jinja2 模板将交互内容渲染为易读文本，保存至 `logs/chats/{timestamp}_{session_id}.txt`。
 4.  **Logging** ([logger_setup.py](src/logger_setup.py)): 使用 `loguru` 进行分层日志管理。
     - `app.log`: 记录应用运行状态。
-    - `chat_interactions.log`: 专门存储 JSON 格式的交互数据。
 5.  **Configuration** ([config.py](src/config.py)): 通过 `.env` 文件或环境变量管理后端 URL、监听地址等。
+
+## OpenSpec 规格驱动开发
+
+项目强制采用 [OpenSpec](openspec/) 工作流：
+
+- **Specs**: 位于 [openspec/specs/](openspec/specs/)，定义系统能力和详细规格。
+- **Changes**: 位于 [openspec/changes/](openspec/changes/)，记录功能变更、设计方案及关联任务。
+- **流程**: 任何非琐碎的变更应遵循 `New Change -> Design -> Tasks -> Implementation -> Verify` 的闭环。
 
 ## 代码注释标准
 
@@ -74,8 +81,12 @@
 
 ## 开发说明
 
-- 使用 `uv` 进行包管理
-- 需要 Python 3.12+
-- 测试位于 `tests/` 目录（如果存在），使用 pytest 并支持 asyncio
-- `.venv` 目录包含虚拟环境（请勿提交）
-- 环境变量配置直接修改 `.env` 文件，可参考 `src/config.py` 中的默认值
+- 使用 `uv` 进行包管理。
+- 需要 Python 3.12+。
+- **测试**: 位于 [tests/](tests/) 目录，使用 `pytest` 并支持异步测试。核心功能（路由、Session 提取、日志记录）均有覆盖。
+- **虚拟环境**: `.venv` 目录包含依赖环境（请勿提交）。
+- **环境配置**: 修改 `.env` 文件，参考 [src/config.py](src/config.py) 中的默认值。
+- **模板管理**: 聊天渲染模板位于 [chat-templates/](chat-templates/)。
+- **日志查看**:
+  - 应用日志：`logs/app.log`。
+  - 会话日志：`logs/chats/` 目录下的 `.yaml` (数据) 和 `.txt` (渲染)。
