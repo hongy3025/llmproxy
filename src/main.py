@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -30,7 +31,7 @@ def tojson_filter(value, **kwargs):
 jinja_env.filters["tojson"] = tojson_filter
 
 
-def render_chat_text(session_id: str, body_json: dict):
+def render_chat_text(session_id: str, body_json: dict, timestamp: str):
     """Render chat messages using Jinja template and save to .txt file."""
     if not body_json or "messages" not in body_json:
         return
@@ -75,8 +76,8 @@ def render_chat_text(session_id: str, body_json: dict):
 
         rendered_text = template.render(**context)
 
-        # Save to logs/chats/chat_{session}.txt
-        txt_file_path = LOG_DIR / f"chat_{session_id}.txt"
+        # Save to logs/chats/YYYY-MM-DD_HHMMSS_ffffff_{session_id}.txt
+        txt_file_path = LOG_DIR / f"{timestamp}_{session_id}.txt"
         with open(txt_file_path, "w", encoding="utf-8") as f:
             f.write(rendered_text)
 
@@ -93,9 +94,11 @@ class BlockStyleDumper(yaml.SafeDumper):
         return super().represent_scalar(tag, value, style)
 
 
-def log_chat_interaction(session_id: str, request_data: dict, response_data: dict):
+def log_chat_interaction(
+    session_id: str, request_data: dict, response_data: dict, timestamp: str
+):
     """Log the chat interaction to a session-specific YAML file."""
-    file_path = LOG_DIR / f"chat_{session_id}.yaml"
+    file_path = LOG_DIR / f"{timestamp}_{session_id}.yaml"
 
     def normalize_newlines(d):
         """Recursively normalize newlines in a dictionary/list."""
@@ -211,12 +214,13 @@ async def proxy_v1_request(path: str, request: Request):
             pass
 
     session_id = await extract_session_id(request, body_json)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S_%f")
 
     logger.info(f"Session {session_id} | {method} /v1{url}")
 
     # Render chat text using Jinja template if it's a chat completion request
     if url == "/chat/completions" and body_json:
-        render_chat_text(session_id, body_json)
+        render_chat_text(session_id, body_json, timestamp)
 
     # Prepare request data for logging
     request_data = {
@@ -260,7 +264,7 @@ async def proxy_v1_request(path: str, request: Request):
                 "headers": dict(backend_response.headers),
                 "body": response_body_json,
             }
-            log_chat_interaction(session_id, request_data, response_data)
+            log_chat_interaction(session_id, request_data, response_data, timestamp)
 
         # Forward the response
         return StreamingResponse(
