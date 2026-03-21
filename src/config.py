@@ -10,5 +10,6 @@ class Config:
         self.LISTEN_PORT = int(os.getenv("LISTEN_PORT", "8080"))
         self.LOG_DIR = os.getenv("LOG_DIR", "logs")
         self.LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+        self.ENABLE_CHAT_LOGS = os.getenv("ENABLE_CHAT_LOGS", "False").lower() == "true"
 
 config = Config()

@@ -7,13 +7,18 @@ import json
 async def test_proxy_v1_chat_completions_non_streaming(mocker):
     """Test non-streaming chat completions proxying."""
     # Mock the global client.send to return a fake response
-    mock_response = Response(
-        200, 
-        content=json.dumps({"id": "test-res", "choices": [{"text": "hi"}]}).encode(),
-        headers={"content-type": "application/json"}
-    )
+    async def mock_aiter_raw():
+        yield json.dumps({"id": "test-res", "choices": [{"text": "hi"}]}).encode()
+
+    mock_response = mocker.Mock(spec=Response)
+    mock_response.status_code = 200
+    mock_response.headers = {"content-type": "application/json"}
+    mock_response.aiter_raw = mock_aiter_raw
+    mock_response.is_closed = False
+    mock_response.aclose = mocker.AsyncMock()
+
     mocker.patch.object(global_client, "send", return_value=mock_response)
-    mocker.patch("main.log_interaction") # Avoid actual logging in test
+    mocker.patch("main.log_chat_interaction") # Avoid actual logging in test
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.post(
@@ -29,17 +34,19 @@ async def test_proxy_v1_chat_completions_non_streaming(mocker):
 async def test_proxy_v1_chat_completions_streaming(mocker):
     """Test streaming chat completions proxying."""
     # Mock the global client.send to return a streaming response
-    async def mock_aiter_text():
-        yield 'data: {"choices": [{"delta": {"content": "hi"}}]}\n\n'
-        yield 'data: [DONE]\n\n'
+    async def mock_aiter_raw():
+        yield b'data: {"choices": [{"delta": {"content": "hi"}}]}\n\n'
+        yield b'data: [DONE]\n\n'
 
-    mock_response = mocker.Mock()
+    mock_response = mocker.Mock(spec=Response)
     mock_response.status_code = 200
     mock_response.headers = {"content-type": "text/event-stream"}
-    mock_response.aiter_text = mock_aiter_text
+    mock_response.aiter_raw = mock_aiter_raw
+    mock_response.is_closed = False
+    mock_response.aclose = mocker.AsyncMock()
     
     mocker.patch.object(global_client, "send", return_value=mock_response)
-    mocker.patch("main.log_interaction")
+    mocker.patch("main.log_chat_interaction")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.post(
@@ -66,10 +73,12 @@ async def test_proxy_v1_models(mocker):
     async def mock_aiter_raw():
         yield json.dumps({"data": [{"id": "gpt-4"}]}).encode()
 
-    mock_response = mocker.Mock()
+    mock_response = mocker.Mock(spec=Response)
     mock_response.status_code = 200
     mock_response.headers = {"content-type": "application/json"}
     mock_response.aiter_raw = mock_aiter_raw
+    mock_response.is_closed = False
+    mock_response.aclose = mocker.AsyncMock()
 
     mocker.patch.object(global_client, "send", return_value=mock_response)
 

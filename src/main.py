@@ -33,11 +33,19 @@ jinja_env.filters["tojson"] = tojson_filter
 
 def render_chat_text(session_id: str, body_json: dict, timestamp: str):
     """Render chat messages using Jinja template and save to .txt file."""
-    if not body_json or "messages" not in body_json:
+    logger.debug(f"Attempting to render chat text for session {session_id}")
+    if not body_json:
+        logger.debug(f"Session {session_id} | render_chat_text: body_json is None")
+        return
+    if "messages" not in body_json:
+        logger.debug(
+            f"Session {session_id} | render_chat_text: 'messages' not in body_json"
+        )
         return
 
     try:
         template_name = "glm-4.7-flash.jinja"
+        logger.debug(f"Session {session_id} | Using template: {template_name}")
         template = jinja_env.get_template(template_name)
 
         # Pre-process messages to parse tool_calls arguments if they are strings
@@ -152,9 +160,9 @@ def log_chat_interaction(
 
 
 # Initialize HTTP clients
-client = httpx.AsyncClient(base_url=config.BACKEND_URL, timeout=600.0)
+client = httpx.AsyncClient(base_url=config.BACKEND_URL, timeout=600.0, trust_env=False)
 root_url = config.BACKEND_URL.rsplit("/v1", 1)[0]
-root_client = httpx.AsyncClient(base_url=root_url, timeout=600.0)
+root_client = httpx.AsyncClient(base_url=root_url, timeout=600.0, trust_env=False)
 
 
 @asynccontextmanager
@@ -217,10 +225,26 @@ async def proxy_v1_request(path: str, request: Request):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S_%f")
 
     logger.info(f"Session {session_id} | {method} /v1{url}")
+    logger.debug(
+        f"Session {session_id} | Request Body present: {body_json is not None}"
+    )
+    if body_json:
+        logger.debug(
+            f"Session {session_id} | Request Body Keys: {list(body_json.keys())}"
+        )
 
     # Render chat text using Jinja template if it's a chat completion request
-    if url == "/chat/completions" and body_json:
+    if (
+        config.ENABLE_CHAT_LOGS
+        and url in ["/chat/completions", "/messages"]
+        and body_json
+    ):
+        logger.debug(f"Session {session_id} | Calling render_chat_text for {url}")
         render_chat_text(session_id, body_json, timestamp)
+    else:
+        logger.debug(
+            f"Session {session_id} | Skipping render_chat_text. url={url}, body_json_present={body_json is not None}, ENABLE_CHAT_LOGS={config.ENABLE_CHAT_LOGS}"
+        )
 
     # Prepare request data for logging
     request_data = {
@@ -246,9 +270,12 @@ async def proxy_v1_request(path: str, request: Request):
         response_chunks = []
 
         async def response_stream_wrapper():
-            async for chunk in backend_response.aiter_raw():
-                response_chunks.append(chunk)
-                yield chunk
+            try:
+                async for chunk in backend_response.aiter_raw():
+                    response_chunks.append(chunk)
+                    yield chunk
+            finally:
+                await backend_response.aclose()
 
             # After stream is exhausted, log the interaction
             full_response_body = b"".join(response_chunks)
@@ -264,7 +291,12 @@ async def proxy_v1_request(path: str, request: Request):
                 "headers": dict(backend_response.headers),
                 "body": response_body_json,
             }
-            log_chat_interaction(session_id, request_data, response_data, timestamp)
+            if config.ENABLE_CHAT_LOGS:
+                log_chat_interaction(session_id, request_data, response_data, timestamp)
+            else:
+                logger.debug(
+                    f"Session {session_id} | Skipping log_chat_interaction as ENABLE_CHAT_LOGS=False"
+                )
 
         # Forward the response
         return StreamingResponse(
@@ -288,16 +320,33 @@ async def catch_all_request(path: str, request: Request):
     if "host" in headers:
         del headers["host"]
 
-    logger.info(f"Catch-all | {method} {url}")
+    logger.info(f"Catch-all Route Hit | {method} {url}")
+    logger.debug(f"Catch-all Request Headers: {headers}")
 
     content = await request.body()
     try:
+        body_json = None
+        if content:
+            try:
+                body_json = json.loads(content)
+                logger.debug(f"Catch-all Request Body: {body_json}")
+            except json.JSONDecodeError:
+                logger.debug(f"Catch-all Request Body: (not JSON)")
+                pass
         backend_request = root_client.build_request(
             method, url, content=content, headers=headers, params=request.query_params
         )
         backend_response = await root_client.send(backend_request, stream=True)
+
+        async def response_stream_wrapper():
+            try:
+                async for chunk in backend_response.aiter_raw():
+                    yield chunk
+            finally:
+                await backend_response.aclose()
+
         return StreamingResponse(
-            backend_response.aiter_raw(),
+            response_stream_wrapper(),
             status_code=backend_response.status_code,
             headers=dict(backend_response.headers),
         )

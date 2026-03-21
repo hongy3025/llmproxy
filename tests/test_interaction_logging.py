@@ -1,58 +1,50 @@
 import pytest
 import json
-from main import log_interaction, log_stream_response
-from loguru import logger
-import httpx
+import yaml
+from pathlib import Path
+from main import log_chat_interaction, LOG_DIR
 
-def test_log_interaction_format(mocker):
-    """Test that log_interaction logs JSON with expected structure."""
-    # Patch logger.bind to capture log messages
-    mock_info = mocker.patch.object(logger, "info")
-    mocker.patch.object(logger, "bind", return_value=logger)
+def test_log_chat_interaction_yaml(tmp_path, mocker):
+    """Test that log_chat_interaction saves interaction to a YAML file."""
+    # Override LOG_DIR for testing
+    mocker.patch("main.LOG_DIR", tmp_path)
     
     session_id = "test-session"
-    request_data = {"prompt": "hello"}
-    response_data = "hi there"
-    is_stream = False
+    request_data = {"method": "POST", "path": "v1/chat/completions", "body": {"prompt": "hello"}}
+    response_data = {"status_code": 200, "body": {"choices": [{"text": "hi"}]}}
+    timestamp = "2026-03-21_120000_000000"
     
-    log_interaction(session_id, request_data, response_data, is_stream)
+    log_chat_interaction(session_id, request_data, response_data, timestamp)
     
-    # Check that info was called with a JSON string
-    args, _ = mock_info.call_args
-    log_msg = args[0]
-    log_json = json.loads(log_msg)
+    # Check if YAML file exists
+    yaml_file = tmp_path / f"{timestamp}_{session_id}.yaml"
+    assert yaml_file.exists()
     
-    assert log_json["session_id"] == session_id
-    assert log_json["request"] == request_data
-    assert log_json["response"] == response_data
-    assert log_json["is_stream"] == is_stream
+    # Verify content
+    with open(yaml_file, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+        
+    assert "chats" in data
+    assert len(data["chats"]) == 1
+    assert data["chats"][0]["request"] == request_data
+    assert data["chats"][0]["response"] == response_data
 
-@pytest.mark.asyncio
-async def test_log_stream_response_aggregation(mocker):
-    """Test that log_stream_response aggregates and logs stream content."""
-    # Mock log_interaction to verify its call
-    mock_log_interaction = mocker.patch("main.log_interaction")
+def test_log_chat_interaction_append(tmp_path, mocker):
+    """Test that log_chat_interaction appends to an existing YAML file."""
+    mocker.patch("main.LOG_DIR", tmp_path)
     
-    session_id = "stream-session"
-    request_data = {"stream": True}
+    session_id = "multi-chat-session"
+    timestamp = "2026-03-21_120000_000000"
     
-    # Mock backend_response
-    async def mock_aiter_text():
-        yield "chunk 1"
-        yield "chunk 2"
+    # First interaction
+    log_chat_interaction(session_id, {"req": 1}, {"res": 1}, timestamp)
+    # Second interaction (same session and timestamp)
+    log_chat_interaction(session_id, {"req": 2}, {"res": 2}, timestamp)
     
-    backend_response = mocker.Mock()
-    backend_response.aiter_text = mock_aiter_text
-    
-    # Call the async generator
-    chunks = []
-    async for chunk in log_stream_response(session_id, request_data, backend_response):
-        chunks.append(chunk)
-    
-    # Verify chunks yielded
-    assert chunks == ["chunk 1", "chunk 2"]
-    
-    # Verify log_interaction called with aggregated content
-    mock_log_interaction.assert_called_once_with(
-        session_id, request_data, "chunk 1chunk 2", is_stream=True
-    )
+    yaml_file = tmp_path / f"{timestamp}_{session_id}.yaml"
+    with open(yaml_file, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+        
+    assert len(data["chats"]) == 2
+    assert data["chats"][0]["request"] == {"req": 1}
+    assert data["chats"][1]["request"] == {"req": 2}

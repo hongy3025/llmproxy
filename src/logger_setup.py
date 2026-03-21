@@ -7,6 +7,10 @@ def setup_logger():
     # Ensure log directory exists
     os.makedirs(config.LOG_DIR, exist_ok=True)
     
+    # Append to app.log on startup instead of clearing
+    log_file = os.path.join(config.LOG_DIR, "app.log")
+    # (Removed truncation logic)
+
     # Remove default handler
     logger.remove()
     
