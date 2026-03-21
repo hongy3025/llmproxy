@@ -23,6 +23,13 @@ TEMPLATE_DIR = Path("chat-templates")
 jinja_env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
 
 
+def tojson_filter(value, **kwargs):
+    return json.dumps(value, **kwargs)
+
+
+jinja_env.filters["tojson"] = tojson_filter
+
+
 def render_chat_text(session_id: str, body_json: dict):
     """Render chat messages using Jinja template and save to .txt file."""
     if not body_json or "messages" not in body_json:
@@ -32,10 +39,36 @@ def render_chat_text(session_id: str, body_json: dict):
         template_name = "glm-4.7-flash.jinja"
         template = jinja_env.get_template(template_name)
 
+        # Pre-process messages to parse tool_calls arguments if they are strings
+        messages = body_json.get("messages", [])
+        processed_messages = []
+        for msg in messages:
+            new_msg = msg.copy()
+            if "tool_calls" in new_msg:
+                new_tool_calls = []
+                for tc in new_msg["tool_calls"]:
+                    new_tc = tc.copy()
+                    if "function" in new_tc:
+                        func = new_tc["function"].copy()
+                        if "arguments" in func and isinstance(func["arguments"], str):
+                            try:
+                                func["arguments"] = json.loads(func["arguments"])
+                            except json.JSONDecodeError:
+                                pass
+                        new_tc["function"] = func
+                    elif "arguments" in new_tc and isinstance(new_tc["arguments"], str):
+                        try:
+                            new_tc["arguments"] = json.loads(new_tc["arguments"])
+                        except json.JSONDecodeError:
+                            pass
+                    new_tool_calls.append(new_tc)
+                new_msg["tool_calls"] = new_tool_calls
+            processed_messages.append(new_msg)
+
         # Prepare context for the template
         # Based on glm-4.7-flash.jinja, it expects 'messages', 'tools', 'add_generation_prompt' etc.
         context = {
-            "messages": body_json.get("messages", []),
+            "messages": processed_messages,
             "tools": body_json.get("tools"),
             "add_generation_prompt": body_json.get("add_generation_prompt", True),
         }
