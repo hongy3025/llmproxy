@@ -1,0 +1,27 @@
+### 公共变量
+
+@baseUrl = http://192.168.1.2:18085
+@auth = Authorization: Bearer gb6haanmGGck4TCPQKWAfuuCDzfBQYQw
+
+### 获取llama-server的metrics信息
+
+GET {{baseUrl}}/metrics HTTP/1.1
+content-type: application/text-plain
+{{auth}}
+
+
+### 获取所有插槽
+
+GET {{baseUrl}}/slots HTTP/1.1
+content-type: application/json
+{{auth}}
+
+### 保存插槽
+
+POST {{baseUrl}}/slots/0?action=save HTTP/1.1
+content-type: application/json
+{{auth}}
+
+{
+    "filename": "slot1.bin"
+}
