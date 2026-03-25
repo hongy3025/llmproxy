@@ -55,22 +55,22 @@ class SlotManager:
     管理内存中的槽位状态、Token 缓存，处理新会话请求时的最佳匹配和槽位分配。
     """
 
-    slots: Dict[int, Slot] = {}
+    _slots: Dict[int, Slot] = {}
     """内存中槽位 ID 到槽位对象的映射表。"""
 
-    session_to_slot: Dict[str, int] = {}
+    _session_to_slot: Dict[str, int] = {}
     """会话 ID 到当前绑定槽位 ID 的映射表。"""
 
-    slot_token_cache: Dict[int, List[int]] = {}
+    _slot_token_cache: Dict[int, List[int]] = {}
     """槽位 ID 到其对应 Token 序列的缓存，用于前缀匹配优化。"""
 
-    lock: asyncio.Lock = asyncio.Lock()
+    _lock: asyncio.Lock = asyncio.Lock()
     """并发访问锁，确保槽位分配和状态更新的原子性。"""
 
-    llama_client: LlamaServerClient
+    _llama_client: LlamaServerClient
     """与 llama-server 进行 API 交互的客户端。"""
 
-    slot_save_dir: str = "data/slots"
+    _slot_save_dir: str = "data/slots"
     """槽位状态持久化数据的存储目录。"""
 
     def __init__(self, llama_client: LlamaServerClient):
@@ -80,24 +80,24 @@ class SlotManager:
         Args:
             llama_client (LlamaServerClient): 用于与 llama-server 交互的客户端。
         """
-        self.llama_client = llama_client
-        os.makedirs(self.slot_save_dir, exist_ok=True)
+        self._llama_client = llama_client
+        os.makedirs(self._slot_save_dir, exist_ok=True)
 
     async def initialize_slots(self):
         """
         从 llama-server 查询并初始化本地槽位跟踪状态。
         """
-        async with self.lock:
+        async with self._lock:
             try:
-                server_slots = await self.llama_client.get_slots()
+                server_slots = await self._llama_client.get_slots()
                 for slot_data in server_slots:
                     slot_id = slot_data.get("id")
                     if slot_id is not None:
-                        self.slots[slot_id] = Slot(
+                        self._slots[slot_id] = Slot(
                             id=slot_id, state=slot_data.get("state", 0)
                         )
                         # We might not know the session_id or token cache yet.
-                logger.info(f"Initialized {len(self.slots)} slots from llama-server.")
+                logger.info(f"Initialized {len(self._slots)} slots from llama-server.")
             except Exception as e:
                 logger.error(f"Failed to initialize slots: {e}")
 
@@ -116,7 +116,7 @@ class SlotManager:
         best_slot = None
         max_match_len = 0
 
-        for slot_id, cached_tokens in self.slot_token_cache.items():
+        for slot_id, cached_tokens in self._slot_token_cache.items():
             match_len = 0
             for c_tok, t_tok in zip(cached_tokens, chat_token_array):
                 if c_tok == t_tok:
@@ -138,8 +138,8 @@ class SlotManager:
             slot_id (int): 槽位 ID。
             state (int): 状态值 (0: idle, 1: processing)。
         """
-        if slot_id in self.slots:
-            self.slots[slot_id].state = state
+        if slot_id in self._slots:
+            self._slots[slot_id].state = state
 
     def _get_lru_slot(self) -> int:
         """
@@ -149,14 +149,14 @@ class SlotManager:
             int: 选定的槽位 ID。
         """
         # Ideally, we find an idle slot (not processing)
-        idle_slots = [s for s in self.slots.values() if s.state == 0]
+        idle_slots = [s for s in self._slots.values() if s.state == 0]
         if not idle_slots:
             # If all are "processing", we fallback to the oldest last_accessed
             # Though we shouldn't steal a processing slot, but as a fallback:
             logger.warning(
                 "All slots are currently processing! Forcing eviction of the oldest slot."
             )
-            candidate_slots = list(self.slots.values())
+            candidate_slots = list(self._slots.values())
         else:
             candidate_slots = idle_slots
 
@@ -176,12 +176,12 @@ class SlotManager:
         Returns:
             int: 分配到的槽位 ID。
         """
-        async with self.lock:
+        async with self._lock:
             # Handle empty session_id (anonymous request)
             if not session_id:
                 unbound_idle_slots = [
                     s
-                    for s in self.slots.values()
+                    for s in self._slots.values()
                     if s.state == 0 and s.session_id is None
                 ]
                 if unbound_idle_slots:
@@ -189,28 +189,28 @@ class SlotManager:
                     target_slot_id = unbound_idle_slots[0].id
                 else:
                     target_slot_id = self._get_lru_slot()
-                    target_slot = self.slots[target_slot_id]
+                    target_slot = self._slots[target_slot_id]
                     if target_slot.session_id is not None:
                         logger.warning(
                             f"No unbound idle slots available. Evicting session '{target_slot.session_id}' "
                             f"from slot {target_slot_id} for anonymous request."
                         )
-                        if target_slot.session_id in self.session_to_slot:
-                            del self.session_to_slot[target_slot.session_id]
+                        if target_slot.session_id in self._session_to_slot:
+                            del self._session_to_slot[target_slot.session_id]
                         target_slot.session_id = None
 
-                target_slot = self.slots[target_slot_id]
+                target_slot = self._slots[target_slot_id]
                 target_slot.last_accessed = time.time()
-                self.slot_token_cache[target_slot_id] = chat_token_array
+                self._slot_token_cache[target_slot_id] = chat_token_array
                 return target_slot_id
 
             # 1. Check if session already has a slot
-            if session_id in self.session_to_slot:
-                slot_id = self.session_to_slot[session_id]
-                if slot_id in self.slots:
-                    self.slots[slot_id].last_accessed = time.time()
+            if session_id in self._session_to_slot:
+                slot_id = self._session_to_slot[session_id]
+                if slot_id in self._slots:
+                    self._slots[slot_id].last_accessed = time.time()
                     # Update cache
-                    self.slot_token_cache[slot_id] = chat_token_array
+                    self._slot_token_cache[slot_id] = chat_token_array
                     logger.debug(f"Session {session_id} reused existing slot {slot_id}")
                     return slot_id
 
@@ -227,7 +227,7 @@ class SlotManager:
 
             # 3. Decide target slot and whether to clone
             if source_slot_id is not None and match_len > 10:
-                source_slot = self.slots[source_slot_id]
+                source_slot = self._slots[source_slot_id]
                 # If the best matched slot is not bound to any session, use it directly
                 if source_slot.session_id is None:
                     target_slot_id = source_slot_id
@@ -240,30 +240,30 @@ class SlotManager:
                 # No good match, just get an LRU slot
                 target_slot_id = self._get_lru_slot()
 
-            target_slot = self.slots[target_slot_id]
+            target_slot = self._slots[target_slot_id]
 
             # Unbind old session if any
             if (
                 target_slot.session_id
-                and target_slot.session_id in self.session_to_slot
+                and target_slot.session_id in self._session_to_slot
             ):
-                del self.session_to_slot[target_slot.session_id]
+                del self._session_to_slot[target_slot.session_id]
 
             # 4. Clone state if needed
             if needs_clone:
                 try:
                     filename = f"slot_{source_slot_id}_to_{target_slot_id}.bin"
                     filepath = os.path.abspath(
-                        os.path.join(self.slot_save_dir, filename)
+                        os.path.join(self._slot_save_dir, filename)
                     )
 
                     logger.info(
                         f"Cloning slot {source_slot_id} to {target_slot_id} for session {session_id}"
                     )
                     # Save source
-                    await self.llama_client.save_slot(source_slot_id, filepath)
+                    await self._llama_client.save_slot(source_slot_id, filepath)
                     # Restore to target
-                    await self.llama_client.restore_slot(target_slot_id, filepath)
+                    await self._llama_client.restore_slot(target_slot_id, filepath)
 
                 except Exception as e:
                     logger.error(
@@ -273,7 +273,7 @@ class SlotManager:
             # 5. Bind new session to target slot
             target_slot.session_id = session_id
             target_slot.last_accessed = time.time()
-            self.session_to_slot[session_id] = target_slot_id
-            self.slot_token_cache[target_slot_id] = chat_token_array
+            self._session_to_slot[session_id] = target_slot_id
+            self._slot_token_cache[target_slot_id] = chat_token_array
 
             return target_slot_id

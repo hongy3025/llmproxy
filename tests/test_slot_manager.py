@@ -32,7 +32,7 @@ async def slot_manager(mock_llama_client):
 @pytest.mark.asyncio
 async def test_prefix_matching(slot_manager):
     # Setup cache
-    slot_manager.slot_token_cache = {
+    slot_manager._slot_token_cache = {
         0: [1, 2, 3, 4, 5],
         1: [1, 2, 3, 6, 7],
         2: [1, 2, 8, 9, 10],
@@ -62,20 +62,20 @@ async def test_prefix_matching(slot_manager):
 @pytest.mark.asyncio
 async def test_lru_slot_allocation(slot_manager):
     # Setup slots with different last_accessed times
-    slot_manager.slots[0].last_accessed = 100.0
-    slot_manager.slots[0].state = 0
+    slot_manager._slots[0].last_accessed = 100.0
+    slot_manager._slots[0].state = 0
 
-    slot_manager.slots[1].last_accessed = 50.0  # LRU
-    slot_manager.slots[1].state = 0
+    slot_manager._slots[1].last_accessed = 50.0  # LRU
+    slot_manager._slots[1].state = 0
 
-    slot_manager.slots[2].last_accessed = 150.0
-    slot_manager.slots[2].state = 0
+    slot_manager._slots[2].last_accessed = 150.0
+    slot_manager._slots[2].state = 0
 
     lru_slot = slot_manager._get_lru_slot()
     assert lru_slot == 1
 
     # Make slot 1 processing
-    slot_manager.slots[1].state = 1
+    slot_manager._slots[1].state = 1
     lru_slot = slot_manager._get_lru_slot()
     # Now slot 0 is LRU among idle slots
     assert lru_slot == 0
@@ -84,29 +84,29 @@ async def test_lru_slot_allocation(slot_manager):
 @pytest.mark.asyncio
 async def test_allocate_and_prepare_slot_reuse(slot_manager):
     # Session already has a slot
-    slot_manager.session_to_slot["session_A"] = 1
-    slot_manager.slots[1].session_id = "session_A"
+    slot_manager._session_to_slot["session_A"] = 1
+    slot_manager._slots[1].session_id = "session_A"
 
     slot_id = await slot_manager.allocate_and_prepare_slot("session_A", [1, 2, 3])
 
     assert slot_id == 1
-    assert slot_manager.slot_token_cache[1] == [1, 2, 3]
+    assert slot_manager._slot_token_cache[1] == [1, 2, 3]
 
 
 @pytest.mark.asyncio
 async def test_allocate_and_prepare_slot_clone(slot_manager):
     # Setup token cache to force a clone (> 10 tokens match)
     source_tokens = [i for i in range(20)]
-    slot_manager.slot_token_cache[0] = source_tokens
-    slot_manager.slots[0].session_id = "session_A"
+    slot_manager._slot_token_cache[0] = source_tokens
+    slot_manager._slots[0].session_id = "session_A"
 
     # Target tokens
     target_tokens = source_tokens[:15] + [99, 100]
 
     # Make slot 1 the LRU
-    slot_manager.slots[1].last_accessed = 10.0
-    slot_manager.slots[0].last_accessed = 100.0
-    slot_manager.slots[2].last_accessed = 200.0
+    slot_manager._slots[1].last_accessed = 10.0
+    slot_manager._slots[0].last_accessed = 100.0
+    slot_manager._slots[2].last_accessed = 200.0
 
     slot_id = await slot_manager.allocate_and_prepare_slot("session_B", target_tokens)
 
@@ -114,9 +114,9 @@ async def test_allocate_and_prepare_slot_clone(slot_manager):
     assert slot_id == 1
 
     # Should have cloned from 0 to 1
-    slot_manager.llama_client.save_slot.assert_called_once()
-    slot_manager.llama_client.restore_slot.assert_called_once()
+    slot_manager._llama_client.save_slot.assert_called_once()
+    slot_manager._llama_client.restore_slot.assert_called_once()
 
-    assert slot_manager.session_to_slot["session_B"] == 1
-    assert slot_manager.slots[1].session_id == "session_B"
-    assert slot_manager.slot_token_cache[1] == target_tokens
+    assert slot_manager._session_to_slot["session_B"] == 1
+    assert slot_manager._slots[1].session_id == "session_B"
+    assert slot_manager._slot_token_cache[1] == target_tokens

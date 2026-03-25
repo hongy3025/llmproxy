@@ -18,26 +18,26 @@ class LlamaServerClient:
     与 Llama 服务器交互的 HTTP 客户端。
     """
 
-    base_url: str = config.BACKEND_URL
+    _base_url: str = config.BACKEND_URL
     """Llama server 根路径 URL。"""
 
-    client: httpx.AsyncClient
+    _client: httpx.AsyncClient
     """异步 HTTP 客户端。"""
 
-    template_cache: OrderedDict[str, str] = OrderedDict()
+    _template_cache: OrderedDict[str, str] = OrderedDict()
     """消息模板缓存，用于加速 prompt 生成。"""
 
-    tokenize_cache: OrderedDict[str, List[int]] = OrderedDict()
+    _tokenize_cache: OrderedDict[str, List[int]] = OrderedDict()
     """Tokenize 结果缓存，用于加速文本转 Token 过程。"""
 
-    cache_max_size: int = 1000
+    _cache_max_size: int = 1000
     """缓存的最大容量。"""
 
     def __init__(self):
         """
         初始化 LlamaServerClient 实例。
         """
-        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
+        self._client = httpx.AsyncClient(base_url=self._base_url, timeout=60.0)
 
     async def get_slots(self) -> List[Dict[str, Any]]:
         """
@@ -49,7 +49,7 @@ class LlamaServerClient:
         Raises:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """
-        response = await self.client.get("/slots")
+        response = await self._client.get("/slots")
         response.raise_for_status()
         return response.json()
 
@@ -67,7 +67,7 @@ class LlamaServerClient:
         Raises:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """
-        response = await self.client.post(
+        response = await self._client.post(
             f"/slots/{slot_id}?action=save", json={"filename": filename}
         )
         response.raise_for_status()
@@ -87,7 +87,7 @@ class LlamaServerClient:
         Raises:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """
-        response = await self.client.post(
+        response = await self._client.post(
             f"/slots/{slot_id}?action=restore", json={"filename": filename}
         )
         response.raise_for_status()
@@ -107,19 +107,19 @@ class LlamaServerClient:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """
         cache_key = json.dumps(messages, sort_keys=True)
-        if cache_key in self.template_cache:
-            self.template_cache.move_to_end(cache_key)
-            return self.template_cache[cache_key]
+        if cache_key in self._template_cache:
+            self._template_cache.move_to_end(cache_key)
+            return self._template_cache[cache_key]
 
-        response = await self.client.post(
+        response = await self._client.post(
             "/apply-template", json={"messages": messages}
         )
         response.raise_for_status()
         prompt = response.json().get("prompt", "")
 
-        self.template_cache[cache_key] = prompt
-        if len(self.template_cache) > self.cache_max_size:
-            self.template_cache.popitem(last=False)
+        self._template_cache[cache_key] = prompt
+        if len(self._template_cache) > self._cache_max_size:
+            self._template_cache.popitem(last=False)
 
         return prompt
 
@@ -136,17 +136,17 @@ class LlamaServerClient:
         Raises:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """
-        if content in self.tokenize_cache:
-            self.tokenize_cache.move_to_end(content)
-            return self.tokenize_cache[content]
+        if content in self._tokenize_cache:
+            self._tokenize_cache.move_to_end(content)
+            return self._tokenize_cache[content]
 
-        response = await self.client.post("/tokenize", json={"content": content})
+        response = await self._client.post("/tokenize", json={"content": content})
         response.raise_for_status()
         tokens = response.json().get("tokens", [])
 
-        self.tokenize_cache[content] = tokens
-        if len(self.tokenize_cache) > self.cache_max_size:
-            self.tokenize_cache.popitem(last=False)
+        self._tokenize_cache[content] = tokens
+        if len(self._tokenize_cache) > self._cache_max_size:
+            self._tokenize_cache.popitem(last=False)
 
         return tokens
 
@@ -154,4 +154,4 @@ class LlamaServerClient:
         """
         关闭异步 HTTP 客户端连接。
         """
-        await self.client.aclose()
+        await self._client.aclose()
