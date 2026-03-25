@@ -5,7 +5,9 @@ Llama Server 客户端模块。
 """
 
 import httpx
+import json
 from typing import Dict, List, Any
+from collections import OrderedDict
 from config import config
 
 
@@ -22,6 +24,11 @@ class LlamaServerClient:
         """Llama server 根路径 URL。"""
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
         """异步 HTTP 客户端。"""
+
+        # 缓存
+        self._template_cache: OrderedDict[str, str] = OrderedDict()
+        self._tokenize_cache: OrderedDict[str, List[int]] = OrderedDict()
+        self._cache_max_size = 1000
 
     async def get_slots(self) -> List[Dict[str, Any]]:
         """
@@ -90,11 +97,22 @@ class LlamaServerClient:
         Raises:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """
+        cache_key = json.dumps(messages, sort_keys=True)
+        if cache_key in self._template_cache:
+            self._template_cache.move_to_end(cache_key)
+            return self._template_cache[cache_key]
+
         response = await self.client.post(
             "/apply-template", json={"messages": messages}
         )
         response.raise_for_status()
-        return response.json().get("prompt", "")
+        prompt = response.json().get("prompt", "")
+
+        self._template_cache[cache_key] = prompt
+        if len(self._template_cache) > self._cache_max_size:
+            self._template_cache.popitem(last=False)
+
+        return prompt
 
     async def tokenize(self, content: str) -> List[int]:
         """
@@ -109,9 +127,19 @@ class LlamaServerClient:
         Raises:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """
+        if content in self._tokenize_cache:
+            self._tokenize_cache.move_to_end(content)
+            return self._tokenize_cache[content]
+
         response = await self.client.post("/tokenize", json={"content": content})
         response.raise_for_status()
-        return response.json().get("tokens", [])
+        tokens = response.json().get("tokens", [])
+
+        self._tokenize_cache[content] = tokens
+        if len(self._tokenize_cache) > self._cache_max_size:
+            self._tokenize_cache.popitem(last=False)
+
+        return tokens
 
     async def close(self):
         """

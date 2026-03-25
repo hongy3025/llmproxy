@@ -117,6 +117,17 @@ class SlotManager:
 
         return best_slot, max_match_len
 
+    def set_slot_state(self, slot_id: int, state: int):
+        """
+        设置指定槽位的处理状态。
+
+        Args:
+            slot_id (int): 槽位 ID。
+            state (int): 状态值 (0: idle, 1: processing)。
+        """
+        if slot_id in self.slots:
+            self.slots[slot_id].state = state
+
     def _get_lru_slot(self) -> int:
         """
         寻找最近最少使用的空闲槽位。
@@ -129,6 +140,9 @@ class SlotManager:
         if not idle_slots:
             # If all are "processing", we fallback to the oldest last_accessed
             # Though we shouldn't steal a processing slot, but as a fallback:
+            logger.warning(
+                "All slots are currently processing! Forcing eviction of the oldest slot."
+            )
             candidate_slots = list(self.slots.values())
         else:
             candidate_slots = idle_slots
@@ -150,6 +164,29 @@ class SlotManager:
             int: 分配到的槽位 ID。
         """
         async with self.lock:
+            # Handle empty session_id (anonymous request)
+            if not session_id:
+                unbound_idle_slots = [s for s in self.slots.values() if s.state == 0 and s.session_id is None]
+                if unbound_idle_slots:
+                    unbound_idle_slots.sort(key=lambda x: x.last_accessed)
+                    target_slot_id = unbound_idle_slots[0].id
+                else:
+                    target_slot_id = self._get_lru_slot()
+                    target_slot = self.slots[target_slot_id]
+                    if target_slot.session_id is not None:
+                        logger.warning(
+                            f"No unbound idle slots available. Evicting session '{target_slot.session_id}' "
+                            f"from slot {target_slot_id} for anonymous request."
+                        )
+                        if target_slot.session_id in self.session_to_slot:
+                            del self.session_to_slot[target_slot.session_id]
+                        target_slot.session_id = None
+                
+                target_slot = self.slots[target_slot_id]
+                target_slot.last_accessed = time.time()
+                self.slot_token_cache[target_slot_id] = chat_token_array
+                return target_slot_id
+
             # 1. Check if session already has a slot
             if session_id in self.session_to_slot:
                 slot_id = self.session_to_slot[session_id]

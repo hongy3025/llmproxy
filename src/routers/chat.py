@@ -60,6 +60,9 @@ async def chat_completions(request: Request):
         # 3. Allocate and prepare slot
         slot_id = await slot_manager.allocate_and_prepare_slot(session_id, tokens)
 
+        # Mark slot as processing
+        slot_manager.set_slot_state(slot_id, 1)
+
         # 4. Prepare /completion request
         completion_req = {
             "prompt": prompt,
@@ -134,48 +137,52 @@ async def chat_completions(request: Request):
                                 logger.error(f"Error parsing SSE data: {e}")
                 finally:
                     await backend_response.aclose()
-
                     # Stream ends
-                    pass
+                    slot_manager.set_slot_state(slot_id, 0)
 
             return StreamingResponse(stream_wrapper(), media_type="text/event-stream")
         else:
             # Normal response
-            await backend_response.aread()
-            data = backend_response.json()
+            try:
+                await backend_response.aread()
+                data = backend_response.json()
 
-            # Map to OpenAI format
-            oai_response = {
-                "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": body_json.get("model", "llama"),
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {
-                            "role": "assistant",
-                            "content": data.get("content", ""),
-                        },
-                        "finish_reason": "stop"
-                        if data.get("stop", False)
-                        else "length",
-                    }
-                ],
-                "usage": {
-                    "prompt_tokens": data.get("tokens_evaluated", 0),
-                    "completion_tokens": data.get("tokens_predicted", 0),
-                    "total_tokens": data.get("tokens_evaluated", 0)
-                    + data.get("tokens_predicted", 0),
-                },
-            }
+                # Map to OpenAI format
+                oai_response = {
+                    "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": body_json.get("model", "llama"),
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": data.get("content", ""),
+                            },
+                            "finish_reason": "stop"
+                            if data.get("stop", False)
+                            else "length",
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": data.get("tokens_evaluated", 0),
+                        "completion_tokens": data.get("tokens_predicted", 0),
+                        "total_tokens": data.get("tokens_evaluated", 0)
+                        + data.get("tokens_predicted", 0),
+                    },
+                }
 
-            return Response(
-                content=json.dumps(oai_response), media_type="application/json"
-            )
+                return Response(
+                    content=json.dumps(oai_response), media_type="application/json"
+                )
+            finally:
+                slot_manager.set_slot_state(slot_id, 0)
 
     except Exception as e:
         logger.exception(
             f"Error in chat_completions for session {session_id}: {str(e)}"
         )
+        if "slot_id" in locals():
+            slot_manager.set_slot_state(slot_id, 0)
         return Response(content=f"Proxy error: {str(e)}", status_code=500)

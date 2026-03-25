@@ -5,7 +5,7 @@
 """
 
 import re
-import uuid
+
 from fastapi import Request
 
 
@@ -56,35 +56,13 @@ async def extract_session_id(request: Request, body_json: dict = None) -> str:
     Returns:
         str: 提取或生成的会话 ID。
     """
-    # 1. Try header
-    session_id = request.headers.get("X-Session-ID")
-    if session_id:
-        return session_id
-
-    # 2. Try Agent-specific persistent IDs (if any)
+    # 1. Try Agent-specific persistent IDs (if any)
     for header in [
-        "X-Request-ID",
-        "X-Correlation-ID",
-        "X-Conversation-ID",
+        "x-open-session",
         "X-Session-ID",
     ]:
         val = request.headers.get(header)
         if val:
             return val
 
-    # 3. Try body (if chat completion)
-    if body_json:
-        # Check for various session/conversation identifiers in body
-        for key in ["session_id", "conversation_id", "user", "metadata"]:
-            if key in body_json:
-                val = body_json[key]
-                if isinstance(val, str):
-                    return val
-                elif isinstance(val, dict) and key == "metadata":
-                    # Try to find session/conversation in metadata
-                    for m_key in ["session_id", "conversation_id", "user_id"]:
-                        if m_key in val:
-                            return str(val[m_key])
-
-    # 4. Fallback to unique request ID (safe and clean)
-    return str(uuid.uuid4())
+    return ""
