@@ -65,7 +65,7 @@ async def chat_completions(request: Request):
 
         # 4. Prepare /completion request
         completion_req = {
-            "prompt": prompt,
+            "prompt": tokens,
             "id_slot": slot_id,
             "stream": body_json.get("stream", False),
         }

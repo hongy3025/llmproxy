@@ -25,6 +25,9 @@ class Config:
         ).rstrip("/")
         """后端目标 URL，通常指向 llama-server 服务的站点地址。"""
 
+        self.BACKEND_API_KEY: str = os.getenv("BACKEND_API_KEY", "")
+        """后端 API Key，用于向 llama-server 发起认证请求。"""
+
         self.LISTEN_HOST: str = os.getenv("LISTEN_HOST", "0.0.0.0")
         """代理服务监听的主机地址。"""
 

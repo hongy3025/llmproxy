@@ -37,7 +37,13 @@ class LlamaServerClient:
         """
         初始化 LlamaServerClient 实例。
         """
-        self._client = httpx.AsyncClient(base_url=self._base_url, timeout=60.0)
+        headers = {}
+        if config.BACKEND_API_KEY:
+            headers["Authorization"] = f"Bearer {config.BACKEND_API_KEY}"
+
+        self._client = httpx.AsyncClient(
+            base_url=self._base_url, timeout=60.0, headers=headers
+        )
 
     async def get_slots(self) -> List[Dict[str, Any]]:
         """
