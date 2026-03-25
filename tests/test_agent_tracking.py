@@ -1,10 +1,7 @@
-import json
-import uuid
-
 import pytest
 from fastapi import Request
 
-from main import extract_session_id, get_agent_info
+from utils import extract_session_id, get_agent_info
 
 
 @pytest.mark.asyncio

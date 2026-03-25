@@ -29,12 +29,9 @@
     - `/v1/{path:path}`: 主要代理接口，映射到后端 `/v1` 路径。
     - `/{path:path}`: 兜底接口，映射到后端根路径。
 2.  **Session Extraction**: 通过 `extract_session_id` 函数从 `X-Session-ID` Header、Body 或 `user` 字段中提取会话标识。
-3.  **Interaction Recording**:
-    - **YAML 归档**: 记录完整请求/响应到 `logs/chats/{timestamp}_{session_id}.yaml`。
-    - **TXT 渲染**: 使用 [chat-templates/](chat-templates/) 中的 Jinja2 模板将交互内容渲染为易读文本，保存至 `logs/chats/{timestamp}_{session_id}.txt`。
-4.  **Logging** ([logger_setup.py](src/logger_setup.py)): 使用 `loguru` 进行分层日志管理。
+3.  **Logging** ([logger_setup.py](src/logger_setup.py)): 使用 `loguru` 进行分层日志管理。
     - `app.log`: 记录应用运行状态。
-5.  **Configuration** ([config.py](src/config.py)): 通过 `.env` 文件或环境变量管理后端 URL、监听地址等。
+4.  **Configuration** ([config.py](src/config.py)): 通过 `.env` 文件或环境变量管理后端 URL、监听地址等。
 
 ## OpenSpec 规格驱动开发
 
@@ -87,7 +84,5 @@
 - **测试**: 位于 [tests/](tests/) 目录，使用 `pytest` 并支持异步测试。核心功能（路由、Session 提取、日志记录）均有覆盖。
 - **虚拟环境**: `.venv` 目录包含依赖环境（请勿提交）。
 - **环境配置**: 修改 `.env` 文件，参考 [src/config.py](src/config.py) 中的默认值。
-- **模板管理**: 聊天渲染模板位于 [chat-templates/](chat-templates/)。
 - **日志查看**:
   - 应用日志：`logs/app.log`。
-  - 会话日志：`logs/chats/` 目录下的 `.yaml` (数据) 和 `.txt` (渲染)。
