@@ -18,14 +18,7 @@ class LlamaServerClient:
         """
         初始化 LlamaServerClient 实例。
         """
-        # We need the root URL of llama-server since some endpoints might be at root.
-        # However, usually `/slots`, `/tokenize` might be at root or under /v1 depending on llama-server setup.
-        # By default llama-server puts them at the root.
-        self.base_url = (
-            config.BACKEND_URL.rsplit("/v1", 1)[0]
-            if config.BACKEND_URL.endswith("/v1")
-            else config.BACKEND_URL
-        )
+        self.base_url = config.BACKEND_URL
         """Llama server 根路径 URL。"""
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
         """异步 HTTP 客户端。"""

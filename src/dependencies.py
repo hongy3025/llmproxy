@@ -11,7 +11,7 @@ from llama_client import LlamaServerClient
 from slot_manager import SlotManager
 
 # Initialize HTTP clients
-root_url = config.BACKEND_URL.rsplit("/v1", 1)[0]
+root_url = config.BACKEND_URL
 root_client = httpx.AsyncClient(base_url=root_url, timeout=600.0, trust_env=False)
 """全局异步 HTTP 客户端，用于代理根路径请求。"""
 

@@ -10,7 +10,7 @@ def test_config_defaults(monkeypatch):
 
     # Reload Config
     cfg = Config()
-    assert cfg.BACKEND_URL == "http://192.168.1.2:18085/v1"
+    assert cfg.BACKEND_URL == "http://192.168.1.2:18085"
     assert cfg.LISTEN_HOST == "0.0.0.0"
     assert cfg.LISTEN_PORT == 8080
 

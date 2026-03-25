@@ -17,10 +17,10 @@ class Config:
     """
 
     def __init__(self):
-        self.BACKEND_URL = os.getenv(
-            "BACKEND_URL", "http://192.168.1.2:18085/v1"
-        ).rstrip("/")
-        """后端目标 URL，通常指向 OpenAI 兼容的 API 根路径或 /v1。"""
+        self.BACKEND_URL = os.getenv("BACKEND_URL", "http://192.168.1.2:18085").rstrip(
+            "/"
+        )
+        """后端目标 URL，通常指向 llama-server 服务的站点地址。"""
 
         self.LISTEN_HOST = os.getenv("LISTEN_HOST", "0.0.0.0")
         """代理服务监听的主机地址。"""
