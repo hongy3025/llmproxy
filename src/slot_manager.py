@@ -55,6 +55,24 @@ class SlotManager:
     管理内存中的槽位状态、Token 缓存，处理新会话请求时的最佳匹配和槽位分配。
     """
 
+    slots: Dict[int, Slot] = {}
+    """内存中槽位 ID 到槽位对象的映射表。"""
+
+    session_to_slot: Dict[str, int] = {}
+    """会话 ID 到当前绑定槽位 ID 的映射表。"""
+
+    slot_token_cache: Dict[int, List[int]] = {}
+    """槽位 ID 到其对应 Token 序列的缓存，用于前缀匹配优化。"""
+
+    lock: asyncio.Lock = asyncio.Lock()
+    """并发访问锁，确保槽位分配和状态更新的原子性。"""
+
+    llama_client: LlamaServerClient
+    """与 llama-server 进行 API 交互的客户端。"""
+
+    slot_save_dir: str = "data/slots"
+    """槽位状态持久化数据的存储目录。"""
+
     def __init__(self, llama_client: LlamaServerClient):
         """
         初始化 SlotManager 实例。
@@ -62,12 +80,7 @@ class SlotManager:
         Args:
             llama_client (LlamaServerClient): 用于与 llama-server 交互的客户端。
         """
-        self.slots: Dict[int, Slot] = {}
-        self.session_to_slot: Dict[str, int] = {}
-        self.slot_token_cache: Dict[int, List[int]] = {}
-        self.lock = asyncio.Lock()
         self.llama_client = llama_client
-        self.slot_save_dir = "data/slots"
         os.makedirs(self.slot_save_dir, exist_ok=True)
 
     async def initialize_slots(self):
@@ -166,7 +179,11 @@ class SlotManager:
         async with self.lock:
             # Handle empty session_id (anonymous request)
             if not session_id:
-                unbound_idle_slots = [s for s in self.slots.values() if s.state == 0 and s.session_id is None]
+                unbound_idle_slots = [
+                    s
+                    for s in self.slots.values()
+                    if s.state == 0 and s.session_id is None
+                ]
                 if unbound_idle_slots:
                     unbound_idle_slots.sort(key=lambda x: x.last_accessed)
                     target_slot_id = unbound_idle_slots[0].id
@@ -181,7 +198,7 @@ class SlotManager:
                         if target_slot.session_id in self.session_to_slot:
                             del self.session_to_slot[target_slot.session_id]
                         target_slot.session_id = None
-                
+
                 target_slot = self.slots[target_slot_id]
                 target_slot.last_accessed = time.time()
                 self.slot_token_cache[target_slot_id] = chat_token_array

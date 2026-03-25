@@ -16,19 +16,26 @@ class LlamaServerClient:
     与 Llama 服务器交互的 HTTP 客户端。
     """
 
+    base_url: str = config.BACKEND_URL
+    """Llama server 根路径 URL。"""
+
+    client: httpx.AsyncClient
+    """异步 HTTP 客户端。"""
+
+    _template_cache: OrderedDict[str, str] = OrderedDict()
+    """消息模板缓存，用于加速 prompt 生成。"""
+
+    _tokenize_cache: OrderedDict[str, List[int]] = OrderedDict()
+    """Tokenize 结果缓存，用于加速文本转 Token 过程。"""
+
+    _cache_max_size: int = 1000
+    """缓存的最大容量。"""
+
     def __init__(self):
         """
         初始化 LlamaServerClient 实例。
         """
-        self.base_url = config.BACKEND_URL
-        """Llama server 根路径 URL。"""
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
-        """异步 HTTP 客户端。"""
-
-        # 缓存
-        self._template_cache: OrderedDict[str, str] = OrderedDict()
-        self._tokenize_cache: OrderedDict[str, List[int]] = OrderedDict()
-        self._cache_max_size = 1000
 
     async def get_slots(self) -> List[Dict[str, Any]]:
         """
