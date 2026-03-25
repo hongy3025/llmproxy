@@ -29,9 +29,6 @@ class Slot(BaseModel):
     last_accessed: float = 0.0
     """最后访问的时间戳（用于 LRU 淘汰）。"""
 
-    prompt: str = ""
-    """该槽位当前的 prompt 文本（可选记录）。"""
-
     state: int = 0  # 0: idle, 1: processing
     """槽位当前状态：0 为空闲，1 为处理中。"""
 
