@@ -3,6 +3,7 @@
 
 负责初始化和提供全局的 HTTP 客户端实例与槽位管理器等依赖对象。
 """
+
 import httpx
 
 from config import config

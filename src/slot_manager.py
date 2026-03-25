@@ -3,6 +3,7 @@
 
 负责与 llama-server 的槽位（Slot）机制交互，实现会话上下文的持久化、前缀匹配及槽位状态克隆。
 """
+
 import asyncio
 import os
 import time
@@ -18,18 +19,19 @@ class Slot(BaseModel):
     """
     表示 llama-server 中的一个槽位状态模型。
     """
+
     id: int
     """槽位唯一标识符。"""
-    
+
     session_id: Optional[str] = None
     """当前绑定到该槽位的会话 ID。"""
-    
+
     last_accessed: float = 0.0
     """最后访问的时间戳（用于 LRU 淘汰）。"""
-    
+
     prompt: str = ""
     """该槽位当前的 prompt 文本（可选记录）。"""
-    
+
     state: int = 0  # 0: idle, 1: processing
     """槽位当前状态：0 为空闲，1 为处理中。"""
 
@@ -38,9 +40,10 @@ class SessionSlotMapping(BaseModel):
     """
     会话与槽位的映射记录模型。
     """
+
     session_id: str
     """会话的唯一标识符。"""
-    
+
     slot_id: int
     """绑定的槽位 ID。"""
 
@@ -51,6 +54,7 @@ class SlotManager:
 
     管理内存中的槽位状态、Token 缓存，处理新会话请求时的最佳匹配和槽位分配。
     """
+
     def __init__(self, llama_client: LlamaServerClient):
         """
         初始化 SlotManager 实例。

@@ -3,14 +3,17 @@ Llama Server 客户端模块。
 
 提供与 llama-server 特有 API 交互的功能，如管理 slots 和 tokenization。
 """
+
 import httpx
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from config import config
+
 
 class LlamaServerClient:
     """
     与 Llama 服务器交互的 HTTP 客户端。
     """
+
     def __init__(self):
         """
         初始化 LlamaServerClient 实例。
@@ -18,25 +21,29 @@ class LlamaServerClient:
         # We need the root URL of llama-server since some endpoints might be at root.
         # However, usually `/slots`, `/tokenize` might be at root or under /v1 depending on llama-server setup.
         # By default llama-server puts them at the root.
-        self.base_url = config.BACKEND_URL.rsplit("/v1", 1)[0] if config.BACKEND_URL.endswith("/v1") else config.BACKEND_URL
+        self.base_url = (
+            config.BACKEND_URL.rsplit("/v1", 1)[0]
+            if config.BACKEND_URL.endswith("/v1")
+            else config.BACKEND_URL
+        )
         """Llama server 根路径 URL。"""
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
         """异步 HTTP 客户端。"""
-        
+
     async def get_slots(self) -> List[Dict[str, Any]]:
         """
         从 llama-server 获取所有槽位信息。
 
         Returns:
             List[Dict[str, Any]]: 槽位信息的列表。
-            
+
         Raises:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """
         response = await self.client.get("/slots")
         response.raise_for_status()
         return response.json()
-        
+
     async def save_slot(self, slot_id: int, filename: str) -> bool:
         """
         将指定槽位的状态保存到文件。
@@ -47,14 +54,16 @@ class LlamaServerClient:
 
         Returns:
             bool: 成功时返回 True。
-            
+
         Raises:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """
-        response = await self.client.post(f"/slots/{slot_id}?action=save", json={"filename": filename})
+        response = await self.client.post(
+            f"/slots/{slot_id}?action=save", json={"filename": filename}
+        )
         response.raise_for_status()
         return True
-        
+
     async def restore_slot(self, slot_id: int, filename: str) -> bool:
         """
         从文件中恢复指定槽位的状态。
@@ -65,14 +74,16 @@ class LlamaServerClient:
 
         Returns:
             bool: 成功时返回 True。
-            
+
         Raises:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """
-        response = await self.client.post(f"/slots/{slot_id}?action=restore", json={"filename": filename})
+        response = await self.client.post(
+            f"/slots/{slot_id}?action=restore", json={"filename": filename}
+        )
         response.raise_for_status()
         return True
-        
+
     async def apply_template(self, messages: List[Dict[str, str]]) -> str:
         """
         将聊天模板应用于消息列表，以获取 prompt 字符串。
@@ -82,11 +93,13 @@ class LlamaServerClient:
 
         Returns:
             str: 格式化后的 prompt 字符串。
-            
+
         Raises:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """
-        response = await self.client.post("/apply-template", json={"messages": messages})
+        response = await self.client.post(
+            "/apply-template", json={"messages": messages}
+        )
         response.raise_for_status()
         return response.json().get("prompt", "")
 
@@ -99,7 +112,7 @@ class LlamaServerClient:
 
         Returns:
             List[int]: 分词后的 token 数组。
-            
+
         Raises:
             httpx.HTTPStatusError: 请求失败时抛出异常。
         """

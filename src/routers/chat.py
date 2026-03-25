@@ -4,10 +4,10 @@
 处理 /v1/chat/completions 接口的请求，将其转换为 llama-server 兼容的格式，
 处理流式和非流式响应，并记录会话交互信息。
 """
+
 import json
 import time
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
@@ -17,6 +17,7 @@ from dependencies import llama_client, root_client, slot_manager
 from utils import extract_session_id, get_agent_info
 
 router = APIRouter()
+
 
 @router.post("/v1/chat/completions")
 async def chat_completions(request: Request):
@@ -35,7 +36,6 @@ async def chat_completions(request: Request):
     Raises:
         Exception: 捕获所有处理过程中的异常并返回 500 状态码。
     """
-    start_time = time.perf_counter()
     content = await request.body()
     try:
         body_json = json.loads(content)
@@ -44,7 +44,6 @@ async def chat_completions(request: Request):
 
     session_id = await extract_session_id(request, body_json)
     agent_info = get_agent_info(request)
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S_%f")
 
     logger.info(
         f"Session {session_id} | Intercepted /v1/chat/completions | Agent: {agent_info['name']} {agent_info.get('version', '')}"
@@ -136,32 +135,8 @@ async def chat_completions(request: Request):
                 finally:
                     await backend_response.aclose()
 
-                    # Log stream interaction
-                    end_time = time.perf_counter()
-                    total_duration = end_time - start_time
-                    full_content = "".join(response_chunks)
-
-                    response_data = {
-                        "status_code": backend_response.status_code,
-                        "headers": dict(backend_response.headers),
-                        "body": {
-                            "choices": [
-                                {
-                                    "message": {
-                                        "role": "assistant",
-                                        "content": full_content,
-                                    }
-                                }
-                            ]
-                        },
-                    }
-
-                    metadata = {
-                        "agent": agent_info,
-                        "duration_total": total_duration,
-                        "chunk_count": chunk_count,
-                        "timestamp_end": datetime.now().isoformat(),
-                    }
+                    # Stream ends
+                    pass
 
             return StreamingResponse(stream_wrapper(), media_type="text/event-stream")
         else:
@@ -193,21 +168,6 @@ async def chat_completions(request: Request):
                     "total_tokens": data.get("tokens_evaluated", 0)
                     + data.get("tokens_predicted", 0),
                 },
-            }
-
-            end_time = time.perf_counter()
-            total_duration = end_time - start_time
-
-            response_data = {
-                "status_code": backend_response.status_code,
-                "headers": dict(backend_response.headers),
-                "body": oai_response,
-            }
-
-            metadata = {
-                "agent": agent_info,
-                "duration_total": total_duration,
-                "timestamp_end": datetime.now().isoformat(),
             }
 
             return Response(

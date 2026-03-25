@@ -4,6 +4,7 @@
 负责初始化 FastAPI 应用，设置生命周期事件（如启动时初始化依赖，关闭时清理资源），
 并注册各业务路由。
 """
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI

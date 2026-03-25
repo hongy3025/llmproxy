@@ -3,9 +3,11 @@
 
 提供各种通用辅助功能，例如从请求中提取客户端信息和会话标识符。
 """
+
 import re
 import uuid
 from fastapi import Request
+
 
 def get_agent_info(request: Request) -> dict:
     """
@@ -38,6 +40,7 @@ def get_agent_info(request: Request) -> dict:
             agent_info["version"] = match.group(1)
 
     return agent_info
+
 
 async def extract_session_id(request: Request, body_json: dict = None) -> str:
     """

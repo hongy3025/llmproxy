@@ -5,14 +5,29 @@ import asyncio
 
 app = FastAPI()
 
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     body = await request.json()
     stream = body.get("stream", False)
 
     if stream:
+
         async def event_generator():
-            chunks = ["Hello", "!", " This", " is", " a", " streaming", " response", " from", " the", " mock", " backend", "."]
+            chunks = [
+                "Hello",
+                "!",
+                " This",
+                " is",
+                " a",
+                " streaming",
+                " response",
+                " from",
+                " the",
+                " mock",
+                " backend",
+                ".",
+            ]
             for i, chunk in enumerate(chunks):
                 data = {
                     "id": f"chatcmpl-{i}",
@@ -20,12 +35,8 @@ async def chat_completions(request: Request):
                     "created": 1677652288,
                     "model": "gpt-3.5-turbo",
                     "choices": [
-                        {
-                            "index": 0,
-                            "delta": {"content": chunk},
-                            "finish_reason": None
-                        }
-                    ]
+                        {"index": 0, "delta": {"content": chunk}, "finish_reason": None}
+                    ],
                 }
                 yield f"data: {json.dumps(data)}\n\n"
                 await asyncio.sleep(0.1)
@@ -43,18 +54,16 @@ async def chat_completions(request: Request):
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": "Hello! This is a mock response from the backend."
+                        "content": "Hello! This is a mock response from the backend.",
                     },
-                    "finish_reason": "stop"
+                    "finish_reason": "stop",
                 }
             ],
-            "usage": {
-                "prompt_tokens": 9,
-                "completion_tokens": 12,
-                "total_tokens": 21
-            }
+            "usage": {"prompt_tokens": 9, "completion_tokens": 12, "total_tokens": 21},
         }
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=18085)

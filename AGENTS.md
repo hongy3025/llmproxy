@@ -17,6 +17,7 @@
 项目使用 `uv` 进行依赖管理和任务执行：
 
 - **启动服务**：`uv run src/main.py` 或直接运行 `serve.cmd`
+- **代码检查**：`lint.cmd` (Windows) 或 `bash lint.sh` (Linux/macOS)。支持使用 `--fix` 参数自动修复可修复的问题。
 - **运行测试**：`uv run pytest`
 - **安装依赖**：`uv sync`
 - **添加依赖**：`uv add <package>`
@@ -81,6 +82,7 @@
 
 - 使用 `uv` 进行包管理。
 - 需要 Python 3.12+。
+- **代码规范 (Linting)**: **强制要求**：每次修改代码后，必须执行 `lint.cmd` (Windows) 或 `bash lint.sh` (Linux/macOS) 进行代码检查和格式化，确保符合 `ruff` 规范后再提交代码。
 - **测试**: 位于 [tests/](tests/) 目录，使用 `pytest` 并支持异步测试。核心功能（路由、Session 提取、日志记录）均有覆盖。
 - **虚拟环境**: `.venv` 目录包含依赖环境（请勿提交）。
 - **环境配置**: 修改 `.env` 文件，参考 [src/config.py](src/config.py) 中的默认值。
