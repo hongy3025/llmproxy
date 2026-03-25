@@ -1,3 +1,8 @@
+"""
+槽位管理模块。
+
+负责与 llama-server 的槽位（Slot）机制交互，实现会话上下文的持久化、前缀匹配及槽位状态克隆。
+"""
 import asyncio
 import os
 import time
@@ -10,20 +15,49 @@ from llama_client import LlamaServerClient
 
 
 class Slot(BaseModel):
+    """
+    表示 llama-server 中的一个槽位状态模型。
+    """
     id: int
+    """槽位唯一标识符。"""
+    
     session_id: Optional[str] = None
+    """当前绑定到该槽位的会话 ID。"""
+    
     last_accessed: float = 0.0
+    """最后访问的时间戳（用于 LRU 淘汰）。"""
+    
     prompt: str = ""
+    """该槽位当前的 prompt 文本（可选记录）。"""
+    
     state: int = 0  # 0: idle, 1: processing
+    """槽位当前状态：0 为空闲，1 为处理中。"""
 
 
 class SessionSlotMapping(BaseModel):
+    """
+    会话与槽位的映射记录模型。
+    """
     session_id: str
+    """会话的唯一标识符。"""
+    
     slot_id: int
+    """绑定的槽位 ID。"""
 
 
 class SlotManager:
+    """
+    全局槽位管理器类。
+
+    管理内存中的槽位状态、Token 缓存，处理新会话请求时的最佳匹配和槽位分配。
+    """
     def __init__(self, llama_client: LlamaServerClient):
+        """
+        初始化 SlotManager 实例。
+
+        Args:
+            llama_client (LlamaServerClient): 用于与 llama-server 交互的客户端。
+        """
         self.slots: Dict[int, Slot] = {}
         self.session_to_slot: Dict[str, int] = {}
         self.slot_token_cache: Dict[int, List[int]] = {}
@@ -33,7 +67,9 @@ class SlotManager:
         os.makedirs(self.slot_save_dir, exist_ok=True)
 
     async def initialize_slots(self):
-        """Initialize slot tracking by querying the server."""
+        """
+        从 llama-server 查询并初始化本地槽位跟踪状态。
+        """
         async with self.lock:
             try:
                 server_slots = await self.llama_client.get_slots()
@@ -51,7 +87,15 @@ class SlotManager:
     def _find_longest_prefix_match(
         self, chat_token_array: List[int]
     ) -> Tuple[Optional[int], int]:
-        """Find the slot with the longest prefix match for the given token array."""
+        """
+        为给定的 token 数组找到具有最长前缀匹配的槽位。
+
+        Args:
+            chat_token_array (List[int]): 待匹配的请求 token 数组。
+
+        Returns:
+            Tuple[Optional[int], int]: 匹配到的最佳槽位 ID 及其匹配长度。
+        """
         best_slot = None
         max_match_len = 0
 
@@ -70,7 +114,12 @@ class SlotManager:
         return best_slot, max_match_len
 
     def _get_lru_slot(self) -> int:
-        """Find the least recently used slot that is currently idle."""
+        """
+        寻找最近最少使用的空闲槽位。
+
+        Returns:
+            int: 选定的槽位 ID。
+        """
         # Ideally, we find an idle slot (not processing)
         idle_slots = [s for s in self.slots.values() if s.state == 0]
         if not idle_slots:
@@ -86,7 +135,16 @@ class SlotManager:
     async def allocate_and_prepare_slot(
         self, session_id: str, chat_token_array: List[int]
     ) -> int:
-        """Allocate a slot for the session and prepare it (clone if needed)."""
+        """
+        为指定会话分配槽位，并根据需要准备槽位状态（如克隆现有槽位）。
+
+        Args:
+            session_id (str): 会话标识符。
+            chat_token_array (List[int]): 会话对应的最新 token 数组。
+
+        Returns:
+            int: 分配到的槽位 ID。
+        """
         async with self.lock:
             # 1. Check if session already has a slot
             if session_id in self.session_to_slot:

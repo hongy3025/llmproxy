@@ -1,14 +1,39 @@
+"""
+配置模块。
+
+负责从环境变量或 .env 文件加载全局配置项。
+"""
+
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Config:
+    """
+    全局配置类。
+    """
+
     def __init__(self):
-        self.BACKEND_URL = os.getenv("BACKEND_URL", "http://192.168.1.2:18085/v1").rstrip("/")
+        self.BACKEND_URL = os.getenv(
+            "BACKEND_URL", "http://192.168.1.2:18085/v1"
+        ).rstrip("/")
+        """后端目标 URL，通常指向 OpenAI 兼容的 API 根路径或 /v1。"""
+
         self.LISTEN_HOST = os.getenv("LISTEN_HOST", "0.0.0.0")
+        """代理服务监听的主机地址。"""
+
         self.LISTEN_PORT = int(os.getenv("LISTEN_PORT", "8080"))
+        """代理服务监听的端口号。"""
+
         self.LOG_DIR = os.getenv("LOG_DIR", "logs")
+        """日志文件存储目录。"""
+
         self.LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+        """日志记录级别（如 INFO, DEBUG, ERROR）。"""
+
 
 config = Config()
+"""全局配置实例，供其他模块导入使用。"""

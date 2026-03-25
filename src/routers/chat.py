@@ -1,3 +1,9 @@
+"""
+聊天路由模块。
+
+处理 /v1/chat/completions 接口的请求，将其转换为 llama-server 兼容的格式，
+处理流式和非流式响应，并记录会话交互信息。
+"""
 import json
 import time
 import uuid
@@ -14,6 +20,21 @@ router = APIRouter()
 
 @router.post("/v1/chat/completions")
 async def chat_completions(request: Request):
+    """
+    处理 OpenAI 兼容的聊天补全请求。
+
+    负责拦截请求，分配槽位（Slot），并向后端 llama-server 发起代理请求，
+    同时处理 SSE 流式或普通 JSON 响应，将其转回 OpenAI 兼容格式。
+
+    Args:
+        request (Request): FastAPI 请求对象，包含请求头与 JSON 体。
+
+    Returns:
+        Response: 转换后的 StreamingResponse（流式）或普通 Response。
+
+    Raises:
+        Exception: 捕获所有处理过程中的异常并返回 500 状态码。
+    """
     start_time = time.perf_counter()
     content = await request.body()
     try:
