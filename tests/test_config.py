@@ -17,12 +17,12 @@ def test_config_defaults(monkeypatch):
 
 def test_config_from_env(monkeypatch):
     """Test that config correctly picks up environment variables."""
-    monkeypatch.setenv("BACKEND_URL", "http://custom-backend/v1/")
+    monkeypatch.setenv("BACKEND_URL", "http://custom-backend/")
     monkeypatch.setenv("LISTEN_HOST", "127.0.0.1")
     monkeypatch.setenv("LISTEN_PORT", "9090")
 
     cfg = Config()
     # Ensure trailing slash is stripped
-    assert cfg.BACKEND_URL == "http://custom-backend/v1"
+    assert cfg.BACKEND_URL == "http://custom-backend"
     assert cfg.LISTEN_HOST == "127.0.0.1"
     assert cfg.LISTEN_PORT == 9090

@@ -85,7 +85,7 @@ async def chat_completions(request: Request):
 
         # 5. Call /completion
         completion_url = "/completion"
-        # use root_client or client? llama-server usually puts /completion at root
+        # call llama-server completion endpoint
         backend_request = root_client.build_request(
             "POST", completion_url, json=completion_req
         )
