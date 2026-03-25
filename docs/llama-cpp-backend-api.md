@@ -7,7 +7,7 @@
 @auth = Authorization: Bearer gb6haanmGGck4TCPQKWAfuuCDzfBQYQw
 ```
 
-### 健康检查
+### /health 健康检查
 
 ```http
 GET {{baseUrl}}/health HTTP/1.1
@@ -29,7 +29,7 @@ content-type: application/text-plain
 {{auth}}
 ```
 
-### tokenize
+### /tokenize 分词
 
 ```http
 POST {{baseUrl}}/tokenize HTTP/1.1
@@ -45,7 +45,7 @@ content-type: application/json
 {"tokens":[109377,3837,99011,6313]}
 ```
 
-### /apply-template
+### /apply-template 应用模板
 
 ```http
 POST {{baseUrl}}/apply-template HTTP/1.1
@@ -66,7 +66,7 @@ content-type: application/json
 }
 ```
 
-### /completion
+### /completion 补全
 
 ```http
 POST {{baseUrl}}/completion HTTP/1.1
@@ -81,7 +81,7 @@ content-type: application/json
 }
 ```
 
-### /props
+### /props 获取模型属性
 
 ```http
 GET {{baseUrl}}/props HTTP/1.1
@@ -89,7 +89,7 @@ content-type: application/json
 {{auth}}
 ```
 
-### 获取所有插槽
+### /slots 获取所有插槽
 
 ```http
 GET {{baseUrl}}/slots HTTP/1.1
@@ -97,7 +97,7 @@ content-type: application/json
 {{auth}}
 ```
 
-### 保存插槽
+### /slots?{n}?action=save 保存插槽
 
 ```http
 POST {{baseUrl}}/slots/1?action=save HTTP/1.1
