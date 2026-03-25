@@ -1,4 +1,6 @@
-## 背景
+# 利用llama-server的低级api接口-优化多会话的prompt缓存
+
+## 需求背景
 
 llama.cpp 的 llama-http-server 提供了机制维护同时并行的独立的会话状态。这个机制为多个 ai agent 客户端同时调用api服务，而不相互串扰，保证低延迟的 TFTT（Token First Token Time）创造了可能性。
 
