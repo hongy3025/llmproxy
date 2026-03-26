@@ -93,7 +93,16 @@ class SlotManager:
                         self._slots[slot_id] = Slot(
                             id=slot_id, state=slot_data.get("state", 0)
                         )
-                        # We might not know the session_id or token cache yet.
+                        # 初始化 Token 缓存
+                        prompt = slot_data.get("prompt", "")
+                        generated = slot_data.get("generated", "")
+                        combined_text = prompt + generated
+                        if combined_text:
+                            tokens = await self._llama_client.tokenize(combined_text)
+                            self._slot_token_cache[slot_id] = tokens
+                            logger.debug(
+                                f"Initialized token cache for slot {slot_id} with {len(tokens)} tokens."
+                            )
                 logger.info(f"Initialized {len(self._slots)} slots from llama-server.")
             except Exception as e:
                 logger.error(f"Failed to initialize slots: {e}")
