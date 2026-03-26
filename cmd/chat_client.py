@@ -8,6 +8,7 @@
 import argparse
 import json
 import sys
+import uuid
 
 import httpx
 
@@ -22,29 +23,36 @@ def main():
         help="服务地址",
     )
     parser.add_argument("--stream", action="store_true", help="是否启用流式响应")
-    parser.add_argument(
-        "--session-id", type=str, default="test-session", help="会话 ID"
-    )
+    parser.add_argument("--session-id", type=str, help="会话 ID (若未指定则自动生成)")
     parser.add_argument("--model", type=str, default="llama", help="模型名称")
+    parser.add_argument("--system", type=str, help="可选的 system prompt 内容")
     parser.add_argument("--verbose", action="store_true", help="显示详细调试信息")
 
     args = parser.parse_args()
 
+    session_id = args.session_id or str(uuid.uuid4())
+
+    messages = []
+    if args.system:
+        messages.append({"role": "system", "content": args.system})
+    messages.append({"role": "user", "content": args.message})
+
     if args.verbose:
         print(f"Connecting to: {args.url}")
+        print(f"Session ID: {session_id}")
         print(
-            f"Payload: {json.dumps({'model': args.model, 'messages': [{'role': 'user', 'content': args.message}], 'stream': args.stream}, ensure_ascii=False)}"
+            f"Payload: {json.dumps({'model': args.model, 'messages': messages, 'stream': args.stream}, ensure_ascii=False)}"
         )
 
     headers = {
         "Content-Type": "application/json",
-        "X-Session-ID": args.session_id,
+        "X-Session-ID": session_id,
         "User-Agent": "SimpleChatClient/1.0",
     }
 
     payload = {
         "model": args.model,
-        "messages": [{"role": "user", "content": args.message}],
+        "messages": messages,
         "stream": args.stream,
     }
 
