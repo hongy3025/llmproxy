@@ -68,6 +68,7 @@ async def chat_completions(request: Request):
             "prompt": tokens,
             "id_slot": slot_id,
             "stream": body_json.get("stream", False),
+            "n_predict": 2048,  # Default to a reasonable value
         }
 
         # Copy supported generation parameters
@@ -80,11 +81,15 @@ async def chat_completions(request: Request):
             "stop",
             "presence_penalty",
             "frequency_penalty",
+            "repeat_penalty",
         ]:
             if key in body_json:
-                completion_req[key] = body_json[key]
-        if "max_tokens" in body_json and "n_predict" not in completion_req:
-            completion_req["n_predict"] = body_json["max_tokens"]
+                if key == "max_tokens":
+                    completion_req["n_predict"] = body_json[key]
+                else:
+                    completion_req[key] = body_json[key]
+
+        # If n_predict was already in body_json, it will override our default
 
         # 5. Call /completion
         completion_url = "/completion"
@@ -93,6 +98,19 @@ async def chat_completions(request: Request):
             "POST", completion_url, json=completion_req
         )
         backend_response = await root_client.send(backend_request, stream=True)
+
+        if backend_response.status_code != 200:
+            await backend_response.aread()
+            error_data = backend_response.json()
+            logger.error(
+                f"Backend error ({backend_response.status_code}): {error_data}"
+            )
+            slot_manager.set_slot_state(slot_id, 0)
+            return Response(
+                content=json.dumps(error_data),
+                status_code=backend_response.status_code,
+                media_type="application/json",
+            )
 
         # 6. Stream or normal response handling
         is_stream = completion_req.get("stream", False)

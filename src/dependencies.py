@@ -12,7 +12,13 @@ from slot_manager import SlotManager
 
 # Initialize HTTP clients
 root_url = config.BACKEND_URL
-root_client = httpx.AsyncClient(base_url=root_url, timeout=600.0, trust_env=False)
+root_headers = {}
+if config.BACKEND_API_KEY:
+    root_headers["Authorization"] = f"Bearer {config.BACKEND_API_KEY}"
+
+root_client = httpx.AsyncClient(
+    base_url=root_url, timeout=600.0, trust_env=False, headers=root_headers
+)
 """全局异步 HTTP 客户端，用于代理根路径请求。"""
 
 llama_client = LlamaServerClient()
