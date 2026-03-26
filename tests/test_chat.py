@@ -25,7 +25,7 @@ async def test_chat_completions_non_stream(
     # Mocking llama_client and slot_manager
     mock_apply.return_value = "Mocked Prompt"
     mock_tokenize.return_value = [1, 2, 3]
-    mock_allocate.return_value = 0
+    mock_allocate.return_value = (0, "test_reason")
 
     # Mocking root_client.send response
     mock_response = MagicMock()
@@ -67,7 +67,7 @@ async def test_chat_completions_stream(
     # Mocking llama_client and slot_manager
     mock_apply.return_value = "Mocked Prompt"
     mock_tokenize.return_value = [1, 2, 3]
-    mock_allocate.return_value = 0
+    mock_allocate.return_value = (0, "test_reason")
 
     # Mocking root_client.send stream response
     mock_response = AsyncMock()

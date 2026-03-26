@@ -5,7 +5,6 @@
 """
 
 import asyncio
-import os
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -167,7 +166,7 @@ class SlotManager:
 
     async def allocate_and_prepare_slot(
         self, session_id: str, chat_token_array: List[int]
-    ) -> int:
+    ) -> Tuple[int, str]:
         """
         为指定会话分配槽位，并根据需要准备槽位状态（如克隆现有槽位）。
 
@@ -176,7 +175,7 @@ class SlotManager:
             chat_token_array (List[int]): 会话对应的最新 token 数组。
 
         Returns:
-            int: 分配到的槽位 ID。
+            Tuple[int, str]: 分配到的槽位 ID 和分配原因。
         """
         async with self._lock:
             # Handle empty session_id (anonymous request)
@@ -186,12 +185,14 @@ class SlotManager:
                     for s in self._slots.values()
                     if s.state == 0 and s.session_id is None
                 ]
+                reason = "anonymous_idle"
                 if unbound_idle_slots:
                     unbound_idle_slots.sort(key=lambda x: x.last_accessed)
                     target_slot_id = unbound_idle_slots[0].id
                 else:
                     target_slot_id = self._get_lru_slot()
                     target_slot = self._slots[target_slot_id]
+                    reason = "anonymous_evict"
                     if target_slot.session_id is not None:
                         logger.warning(
                             f"No unbound idle slots available. Evicting session '{target_slot.session_id}' "
@@ -204,7 +205,7 @@ class SlotManager:
                 target_slot = self._slots[target_slot_id]
                 target_slot.last_accessed = time.time()
                 self._slot_token_cache[target_slot_id] = chat_token_array
-                return target_slot_id
+                return target_slot_id, reason
 
             # 1. Check if session already has a slot
             if session_id in self._session_to_slot:
@@ -214,7 +215,7 @@ class SlotManager:
                     # Update cache
                     self._slot_token_cache[slot_id] = chat_token_array
                     logger.debug(f"Session {session_id} reused existing slot {slot_id}")
-                    return slot_id
+                    return slot_id, "reused_session_slot"
 
             # 2. Find longest prefix match
             source_slot_id, match_len = self._find_longest_prefix_match(
@@ -226,6 +227,7 @@ class SlotManager:
 
             target_slot_id = None
             needs_clone = False
+            reason = ""
 
             # 3. Decide target slot and whether to clone
             if source_slot_id is not None and match_len > 10:
@@ -233,14 +235,21 @@ class SlotManager:
                 # If the best matched slot is not bound to any session, use it directly
                 if source_slot.session_id is None:
                     target_slot_id = source_slot_id
+                    reason = "match_unbound_slot"
                 else:
                     # Allocate a new LRU slot and clone
                     target_slot_id = self._get_lru_slot()
                     if target_slot_id != source_slot_id:
                         needs_clone = True
+                        reason = "match_clone_slot"
+                    else:
+                        # This shouldn't normally happen if source_slot.session_id is not None
+                        # but it's the same slot (LRU returned the same slot)
+                        reason = "match_same_slot"
             else:
                 # No good match, just get an LRU slot
                 target_slot_id = self._get_lru_slot()
+                reason = "lru_fallback"
 
             target_slot = self._slots[target_slot_id]
 
@@ -268,6 +277,7 @@ class SlotManager:
                     logger.error(
                         f"Error cloning slot {source_slot_id} to {target_slot_id}: {e}"
                     )
+                    reason += "_clone_failed"
 
             # 5. Bind new session to target slot
             target_slot.session_id = session_id
@@ -275,4 +285,4 @@ class SlotManager:
             self._session_to_slot[session_id] = target_slot_id
             self._slot_token_cache[target_slot_id] = chat_token_array
 
-            return target_slot_id
+            return target_slot_id, reason

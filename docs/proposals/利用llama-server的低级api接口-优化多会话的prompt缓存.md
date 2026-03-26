@@ -12,13 +12,13 @@ llama-server 服务在启动时，指定 --parallel N，来开启 N 个并行会
 
 ### 会话状态的维持
 
-用 opencode 作为 agent 客户端请求时，每个请求的 header 中会带有 `x-open-session` 字段，来指定 `session_id`。我们需要在 proxy 层维护 `session_id` 和 `slot` ID 的之间的映射关系状态。
+用 opencode 作为 agent 客户端请求时，每个请求的 header 中会带有 `x-opencode-session` 字段，来指定 `session_id`。我们需要在 proxy 层维护 `session_id` 和 `slot` ID 的之间的映射关系状态。
 
 需定义明确的生命周期策略（如 LRU 淘汰机制或基于最后活跃时间的超时策略）。在会话活跃期间保持绑定稳定；当 `slot` 资源耗尽且有新请求到达时，根据淘汰策略解除不活跃会话的绑定，并释放（或覆盖）其 `slot` 资源。
 
 ### 会话状态的快速克隆
 
-当有新的 `session_id` （请求出现新的 `x-open-session`）出现时，当将这个 `session_id` 绑定到新的 `slot` 时候，由于 `slot` 的状态为空，或者 `slot` 是绑定其它旧会话遗留的状态。将新请求中的 prompt prefill 到 `slot` 中，就需要很长的时间。这就造成了 TFTT 处理延迟。
+当有新的 `session_id` （请求出现新的 `x-opencode-session`）出现时，当将这个 `session_id` 绑定到新的 `slot` 时候，由于 `slot` 的状态为空，或者 `slot` 是绑定其它旧会话遗留的状态。将新请求中的 prompt prefill 到 `slot` 中，就需要很长的时间。这就造成了 TFTT 处理延迟。
 
 加速预填充的方式是：将新会话的 prompt 和 所有 `slot` 中的 prompt（通过 /slots API 查询），进行前缀匹配，寻找前缀最匹配（token化后的前缀匹配最长）的 `slot`。
 - 如果这个 `slot` 已经绑定了 `session_id`。需要**分配一个新的空闲 `slot`（目标 `slot`）**，先通过 API 保存当前匹配 `slot`（源 `slot`）的状态（指定保存路径），再对新分配的空闲 `slot` 调用恢复 API 加载该状态文件，从而实现 `slot` 状态的跨 `slot` 克隆。最后将新 `session_id` 绑定到这个新 `slot`。

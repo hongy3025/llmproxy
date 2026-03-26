@@ -48,17 +48,36 @@ async def chat_completions(request: Request):
     logger.info(
         f"Session {session_id} | Intercepted /v1/chat/completions | Agent: {agent_info['name']} {agent_info.get('version', '')}"
     )
+    # logger.debug(
+    #     f"Session {session_id} | Request body: {json.dumps(body_json, ensure_ascii=False)}"
+    # )
 
     try:
         # 1. Apply template
         messages = body_json.get("messages", [])
+        logger.debug(
+            f"Session {session_id} | Applying template for {len(messages)} messages"
+        )
         prompt = await llama_client.apply_template(messages)
+        logger.debug(
+            f"Session {session_id} | Template applied. Prompt length: {len(prompt)}"
+        )
 
         # 2. Tokenize
+        logger.debug(f"Session {session_id} | Tokenizing prompt")
         tokens = await llama_client.tokenize(prompt)
+        logger.debug(
+            f"Session {session_id} | Tokenization complete. Token count: {len(tokens)}"
+        )
 
         # 3. Allocate and prepare slot
-        slot_id = await slot_manager.allocate_and_prepare_slot(session_id, tokens)
+        logger.debug(f"Session {session_id} | Allocating slot")
+        slot_id, reason = await slot_manager.allocate_and_prepare_slot(
+            session_id, tokens
+        )
+        logger.debug(
+            f"Session {session_id} | Slot allocated: {slot_id} (reason: {reason})"
+        )
 
         # Mark slot as processing
         slot_manager.set_slot_state(slot_id, 1)
@@ -93,6 +112,9 @@ async def chat_completions(request: Request):
 
         # 5. Call /completion
         completion_url = "/completion"
+        logger.debug(
+            f"Session {session_id} | Calling backend {completion_url} with slot {slot_id}"
+        )
         # call llama-server completion endpoint
         backend_request = root_client.build_request(
             "POST", completion_url, json=completion_req
@@ -103,7 +125,7 @@ async def chat_completions(request: Request):
             await backend_response.aread()
             error_data = backend_response.json()
             logger.error(
-                f"Backend error ({backend_response.status_code}): {error_data}"
+                f"Session {session_id} | Backend error ({backend_response.status_code}): {error_data}"
             )
             slot_manager.set_slot_state(slot_id, 0)
             return Response(
@@ -114,17 +136,24 @@ async def chat_completions(request: Request):
 
         # 6. Stream or normal response handling
         is_stream = completion_req.get("stream", False)
+        logger.debug(
+            f"Session {session_id} | Backend response {backend_response.status_code}, is_stream: {is_stream}"
+        )
 
         if is_stream:
 
             async def stream_wrapper():
                 response_chunks = []
                 chunk_count = 0
+                logger.debug(f"Session {session_id} | Starting stream wrapper")
                 try:
                     async for line in backend_response.aiter_lines():
                         if line.startswith("data: "):
                             data_str = line[6:].strip()
                             if data_str == "[DONE]":
+                                logger.debug(
+                                    f"Session {session_id} | Stream [DONE] received. Total chunks: {chunk_count}"
+                                )
                                 yield "data: [DONE]\n\n"
                                 continue
                             try:
@@ -146,24 +175,41 @@ async def chat_completions(request: Request):
                                 }
                                 if data.get("stop", False):
                                     chunk["choices"][0]["finish_reason"] = "stop"
+                                    logger.debug(
+                                        f"Session {session_id} | Stop flag detected in stream"
+                                    )
 
                                 response_chunks.append(content)
                                 chunk_count += 1
 
+                                if chunk_count % 50 == 0:
+                                    logger.debug(
+                                        f"Session {session_id} | Streaming progress: {chunk_count} chunks"
+                                    )
+
                                 yield f"data: {json.dumps(chunk)}\n\n"
                             except Exception as e:
-                                logger.error(f"Error parsing SSE data: {e}")
+                                logger.error(
+                                    f"Session {session_id} | Error parsing SSE data: {e}"
+                                )
                 finally:
                     await backend_response.aclose()
                     # Stream ends
+                    logger.debug(
+                        f"Session {session_id} | Stream finished, releasing slot {slot_id}"
+                    )
                     slot_manager.set_slot_state(slot_id, 0)
 
             return StreamingResponse(stream_wrapper(), media_type="text/event-stream")
         else:
             # Normal response
             try:
+                logger.debug(f"Session {session_id} | Reading non-stream response")
                 await backend_response.aread()
                 data = backend_response.json()
+                logger.debug(
+                    f"Session {session_id} | Backend response data: {json.dumps(data, ensure_ascii=False)}"
+                )
 
                 # Map to OpenAI format
                 oai_response = {
@@ -190,11 +236,13 @@ async def chat_completions(request: Request):
                         + data.get("tokens_predicted", 0),
                     },
                 }
+                logger.debug(f"Session {session_id} | OpenAI format response ready")
 
                 return Response(
                     content=json.dumps(oai_response), media_type="application/json"
                 )
             finally:
+                logger.debug(f"Session {session_id} | Releasing slot {slot_id}")
                 slot_manager.set_slot_state(slot_id, 0)
 
     except Exception as e:

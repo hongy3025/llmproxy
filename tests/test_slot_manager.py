@@ -87,9 +87,10 @@ async def test_allocate_and_prepare_slot_reuse(slot_manager):
     slot_manager._session_to_slot["session_A"] = 1
     slot_manager._slots[1].session_id = "session_A"
 
-    slot_id = await slot_manager.allocate_and_prepare_slot("session_A", [1, 2, 3])
+    slot_id, reason = await slot_manager.allocate_and_prepare_slot("session_A", [1, 2, 3])
 
     assert slot_id == 1
+    assert reason == "reused_session_slot"
     assert slot_manager._slot_token_cache[1] == [1, 2, 3]
 
 
@@ -108,10 +109,11 @@ async def test_allocate_and_prepare_slot_clone(slot_manager):
     slot_manager._slots[0].last_accessed = 100.0
     slot_manager._slots[2].last_accessed = 200.0
 
-    slot_id = await slot_manager.allocate_and_prepare_slot("session_B", target_tokens)
+    slot_id, reason = await slot_manager.allocate_and_prepare_slot("session_B", target_tokens)
 
     # Should allocate slot 1
     assert slot_id == 1
+    assert reason == "match_clone_slot"
 
     # Should have cloned from 0 to 1
     slot_manager._llama_client.save_slot.assert_called_once()

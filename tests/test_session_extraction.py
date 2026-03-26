@@ -16,7 +16,7 @@ async def test_extract_session_id_from_header():
 @pytest.mark.asyncio
 async def test_extract_session_id_from_open_session_header():
     """Test session ID extraction from X-Open-Session header."""
-    scope = {"type": "http", "headers": [(b"x-open-session", b"open-session-id")]}
+    scope = {"type": "http", "headers": [(b"x-opencode-session", b"open-session-id")]}
     request = Request(scope=scope)
     session_id = await extract_session_id(request)
     assert session_id == "open-session-id"

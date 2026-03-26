@@ -4,7 +4,7 @@ llama.cpp's `llama-server` provides a `slot` mechanism for maintaining parallel 
 
 ## What Changes
 
-- Add session management mapping `session_id` (from `x-open-session` header) to llama-server `slot` IDs.
+- Add session management mapping `session_id` (from `x-opencode-session` header) to llama-server `slot` IDs.
 - Introduce a lifecycle policy for sessions (e.g., LRU eviction) to release inactive slots.
 - Implement prefix-matching logic for new sessions to find the best-matching existing slot token array and clone its state using the llama-server API.
 - **BREAKING**: Modify the proxy logic for `/v1/chat/completions`. Instead of transparently forwarding the request, the proxy will call low-level llama-server endpoints (`/apply-template`, `/tokenize`, and `/completion`) and simulate the OpenAI-compatible response.

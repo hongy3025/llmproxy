@@ -7,6 +7,7 @@
 import re
 
 from fastapi import Request
+from loguru import logger
 
 
 def get_agent_info(request: Request) -> dict:
@@ -25,19 +26,22 @@ def get_agent_info(request: Request) -> dict:
     # Case-insensitive check
     ua_lower = ua.lower()
 
+    # OpenCode detection (Check header first, then UA)
+    if request.headers.get("x-opencode-client"):
+        agent_info["name"] = "OpenCode"
+    elif "opencode" in ua_lower:
+        agent_info["name"] = "OpenCode"
+        match = re.search(r"opencode/([\d\.]+)", ua_lower)
+        if match:
+            agent_info["version"] = match.group(1)
     # Claude Code detection
-    if "claudecode" in ua_lower or "claude-cli" in ua_lower:
+    elif "claudecode" in ua_lower or "claude-cli" in ua_lower:
         agent_info["name"] = "Claude Code"
         match = re.search(r"(?:claudecode|claude-cli)/([\d\.]+)", ua_lower)
         if match:
             agent_info["version"] = match.group(1)
     elif "anthropic-client" in ua_lower:
         agent_info["name"] = "Anthropic Client"
-    elif "opencode" in ua_lower:
-        agent_info["name"] = "OpenCode"
-        match = re.search(r"opencode/([\d\.]+)", ua_lower)
-        if match:
-            agent_info["version"] = match.group(1)
 
     return agent_info
 
@@ -56,9 +60,11 @@ async def extract_session_id(request: Request, body_json: dict = None) -> str:
     Returns:
         str: 提取或生成的会话 ID。
     """
+
+    logger.debug(f"extract_session_id: {request.headers}")
     # 1. Try Agent-specific persistent IDs (if any)
     for header in [
-        "x-open-session",
+        "x-opencode-session",
         "X-Session-ID",
     ]:
         val = request.headers.get(header)
