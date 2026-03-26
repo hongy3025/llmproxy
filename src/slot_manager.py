@@ -67,9 +67,6 @@ class SlotManager:
     _llama_client: LlamaServerClient
     """与 llama-server 进行 API 交互的客户端。"""
 
-    _slot_save_dir: str = "data/slots"
-    """槽位状态持久化数据的存储目录。"""
-
     def __init__(self, llama_client: LlamaServerClient):
         """
         初始化 SlotManager 实例。
@@ -78,7 +75,6 @@ class SlotManager:
             llama_client (LlamaServerClient): 用于与 llama-server 交互的客户端。
         """
         self._llama_client = llama_client
-        os.makedirs(self._slot_save_dir, exist_ok=True)
 
     async def initialize_slots(self):
         """
@@ -259,17 +255,14 @@ class SlotManager:
             if needs_clone:
                 try:
                     filename = f"slot_{source_slot_id}_to_{target_slot_id}.bin"
-                    filepath = os.path.abspath(
-                        os.path.join(self._slot_save_dir, filename)
-                    )
 
                     logger.info(
                         f"Cloning slot {source_slot_id} to {target_slot_id} for session {session_id}"
                     )
                     # Save source
-                    await self._llama_client.save_slot(source_slot_id, filepath)
+                    await self._llama_client.save_slot(source_slot_id, filename)
                     # Restore to target
-                    await self._llama_client.restore_slot(target_slot_id, filepath)
+                    await self._llama_client.restore_slot(target_slot_id, filename)
 
                 except Exception as e:
                     logger.error(
