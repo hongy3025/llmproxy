@@ -55,25 +55,27 @@ async def chat_completions(request: Request):
     try:
         # 1. Apply template
         messages = body_json.get("messages", [])
-        logger.debug(
-            f"Session {session_id} | Applying template for {len(messages)} messages"
-        )
+        # logger.debug(
+        #     f"Session {session_id} | Applying template for {len(messages)} messages"
+        # )
         prompt = await llama_client.apply_template(messages)
-        logger.debug(
-            f"Session {session_id} | Template applied. Prompt length: {len(prompt)}"
-        )
 
         # 2. Tokenize
-        logger.debug(f"Session {session_id} | Tokenizing prompt")
         tokens = await llama_client.tokenize(prompt)
+
         logger.debug(
-            f"Session {session_id} | Tokenization complete. Token count: {len(tokens)}"
+            f"Session {session_id} | prompt: {len(prompt)}, token: {len(tokens)}"
         )
+
+        logger.debug("<input_prompt>")
+        logger.debug(f"{prompt[:20000]}...")
+        logger.debug(f"tokens: {tokens[:200]}")
+        logger.debug("</input_prompt>")
 
         # 3. Allocate and prepare slot
         logger.debug(f"Session {session_id} | Allocating slot")
         slot_id, reason = await slot_manager.allocate_and_prepare_slot(
-            session_id, tokens
+            session_id, prompt, tokens
         )
         logger.debug(
             f"Session {session_id} | Slot allocated: {slot_id} (reason: {reason})"
@@ -84,7 +86,7 @@ async def chat_completions(request: Request):
 
         # 4. Prepare /completion request
         completion_req = {
-            "prompt": tokens,
+            "prompt": prompt,
             "id_slot": slot_id,
             "stream": body_json.get("stream", False),
             "n_predict": 2048,  # Default to a reasonable value

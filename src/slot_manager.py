@@ -57,9 +57,6 @@ class SlotManager:
     _session_to_slot: Dict[str, int] = {}
     """会话 ID 到当前绑定槽位 ID 的映射表。"""
 
-    _slot_token_cache: Dict[int, List[int]] = {}
-    """槽位 ID 到其对应 Token 序列的缓存，用于前缀匹配优化。"""
-
     _lock: asyncio.Lock = asyncio.Lock()
     """并发访问锁，确保槽位分配和状态更新的原子性。"""
 
@@ -88,28 +85,20 @@ class SlotManager:
                         self._slots[slot_id] = Slot(
                             id=slot_id, state=slot_data.get("state", 0)
                         )
-                        # 初始化 Token 缓存
-                        prompt = slot_data.get("prompt", "")
-                        generated = slot_data.get("generated", "")
-                        combined_text = prompt + generated
-                        if combined_text:
-                            tokens = await self._llama_client.tokenize(combined_text)
-                            self._slot_token_cache[slot_id] = tokens
-                            logger.debug(
-                                f"Initialized token cache for slot {slot_id} with {len(tokens)} tokens."
-                            )
                 logger.info(f"Initialized {len(self._slots)} slots from llama-server.")
             except Exception as e:
                 logger.error(f"Failed to initialize slots: {e}")
 
-    def _find_longest_prefix_match(
-        self, chat_token_array: List[int]
+    async def _find_longest_prefix_match(
+        self, prompt: str, chat_token_array: List[int], server_slots: List[Dict]
     ) -> Tuple[Optional[int], int]:
         """
         为给定的 token 数组找到具有最长前缀匹配的槽位。
 
         Args:
+            prompt (str): 会话对应的最新 prompt。
             chat_token_array (List[int]): 待匹配的请求 token 数组。
+            server_slots (List[Dict]): 从 llama-server 获取的当前槽位信息。
 
         Returns:
             Tuple[Optional[int], int]: 匹配到的最佳槽位 ID 及其匹配长度。
@@ -117,9 +106,27 @@ class SlotManager:
         best_slot = None
         max_match_len = 0
 
-        for slot_id, cached_tokens in self._slot_token_cache.items():
+        for slot_data in server_slots:
+            slot_id = slot_data.get("id")
+            if slot_id is None:
+                continue
+
+            iprompt = slot_data.get("prompt", "")
+            generated = slot_data.get("generated", "")
+            combined_text = iprompt + generated
+            if not combined_text:
+                continue
+
+            logger.debug(f"<slot_prompt {slot_id}>")
+            logger.debug(f"{combined_text[:200]}...")
+
+            slot_tokens = await self._llama_client.tokenize(combined_text)
+            logger.debug(f"tokens: {slot_tokens[:200]}")
+
+            logger.debug(f"</slot_prompt {slot_id}>")
+
             match_len = 0
-            for c_tok, t_tok in zip(cached_tokens, chat_token_array):
+            for c_tok, t_tok in zip(slot_tokens, chat_token_array):
                 if c_tok == t_tok:
                     match_len += 1
                 else:
@@ -165,13 +172,14 @@ class SlotManager:
         return candidate_slots[0].id
 
     async def allocate_and_prepare_slot(
-        self, session_id: str, chat_token_array: List[int]
+        self, session_id: str, prompt: str, chat_token_array: List[int]
     ) -> Tuple[int, str]:
         """
         为指定会话分配槽位，并根据需要准备槽位状态（如克隆现有槽位）。
 
         Args:
             session_id (str): 会话标识符。
+            prompt (str): 会话对应的最新 prompt。
             chat_token_array (List[int]): 会话对应的最新 token 数组。
 
         Returns:
@@ -204,7 +212,6 @@ class SlotManager:
 
                 target_slot = self._slots[target_slot_id]
                 target_slot.last_accessed = time.time()
-                self._slot_token_cache[target_slot_id] = chat_token_array
                 return target_slot_id, reason
 
             # 1. Check if session already has a slot
@@ -212,14 +219,15 @@ class SlotManager:
                 slot_id = self._session_to_slot[session_id]
                 if slot_id in self._slots:
                     self._slots[slot_id].last_accessed = time.time()
-                    # Update cache
-                    self._slot_token_cache[slot_id] = chat_token_array
                     logger.debug(f"Session {session_id} reused existing slot {slot_id}")
                     return slot_id, "reused_session_slot"
 
-            # 2. Find longest prefix match
-            source_slot_id, match_len = self._find_longest_prefix_match(
-                chat_token_array
+            # 2. Get current slots from server for prefix matching
+            server_slots = await self._llama_client.get_slots()
+
+            # 3. Find longest prefix match
+            source_slot_id, match_len = await self._find_longest_prefix_match(
+                prompt, chat_token_array, server_slots
             )
             logger.debug(
                 f"Session {session_id} best prefix match is slot {source_slot_id} (len: {match_len})"
@@ -283,6 +291,5 @@ class SlotManager:
             target_slot.session_id = session_id
             target_slot.last_accessed = time.time()
             self._session_to_slot[session_id] = target_slot_id
-            self._slot_token_cache[target_slot_id] = chat_token_array
 
             return target_slot_id, reason

@@ -30,32 +30,53 @@ async def slot_manager(mock_llama_client):
 
 
 @pytest.mark.asyncio
-async def test_prefix_matching(slot_manager):
-    # Setup cache
-    slot_manager._slot_token_cache = {
-        0: [1, 2, 3, 4, 5],
-        1: [1, 2, 3, 6, 7],
-        2: [1, 2, 8, 9, 10],
+async def test_prefix_matching(slot_manager, mock_llama_client):
+    # Mock tokenize to return specific tokens for combined text
+    # The combined text for our slots in mock_llama_client is empty initially.
+    # We need to update mock_llama_client.get_slots to return prompt/generated.
+
+    mock_llama_client.get_slots.return_value = [
+        {"id": 0, "prompt": "p0", "generated": "g0"},
+        {"id": 1, "prompt": "p1", "generated": "g1"},
+        {"id": 2, "prompt": "p2", "generated": "g2"},
+    ]
+
+    token_map = {
+        "p0g0": [1, 2, 3, 4, 5],
+        "p1g1": [1, 2, 3, 6, 7],
+        "p2g2": [1, 2, 8, 9, 10],
     }
 
+    async def mock_tokenize(text):
+        return token_map.get(text, [])
+
+    mock_llama_client.tokenize = AsyncMock(side_effect=mock_tokenize)
+
     # Test longest prefix match
-    best_slot, match_len = slot_manager._find_longest_prefix_match([1, 2, 3, 4, 11])
+    server_slots = await mock_llama_client.get_slots()
+    best_slot, match_len = await slot_manager._find_longest_prefix_match(
+        "prompt", [1, 2, 3, 4, 11], server_slots
+    )
     assert best_slot == 0
     assert match_len == 4
 
     # Test another match
-    best_slot, match_len = slot_manager._find_longest_prefix_match([1, 2, 3, 6, 12])
+    best_slot, match_len = await slot_manager._find_longest_prefix_match(
+        "prompt", [1, 2, 3, 6, 12], server_slots
+    )
     assert best_slot == 1
     assert match_len == 4
 
     # Test short match (matches 0, 1, and 2 equally, returns first found)
-    best_slot, match_len = slot_manager._find_longest_prefix_match([1, 2, 10, 11])
+    best_slot, match_len = await slot_manager._find_longest_prefix_match(
+        "prompt", [1, 2, 10, 11], server_slots
+    )
     assert match_len == 2
 
     # Test no match
-    best_slot, match_len = slot_manager._find_longest_prefix_match([99, 100])
-    # With 0 match length, it technically returns the first one it checked with match_len=0,
-    # but we only care about it if match_len > 10 usually, let's just check length
+    best_slot, match_len = await slot_manager._find_longest_prefix_match(
+        "prompt", [99, 100], server_slots
+    )
     assert match_len == 0
 
 
@@ -87,18 +108,32 @@ async def test_allocate_and_prepare_slot_reuse(slot_manager):
     slot_manager._session_to_slot["session_A"] = 1
     slot_manager._slots[1].session_id = "session_A"
 
-    slot_id, reason = await slot_manager.allocate_and_prepare_slot("session_A", [1, 2, 3])
+    slot_id, reason = await slot_manager.allocate_and_prepare_slot(
+        "session_A", "prompt", [1, 2, 3]
+    )
 
     assert slot_id == 1
     assert reason == "reused_session_slot"
-    assert slot_manager._slot_token_cache[1] == [1, 2, 3]
 
 
 @pytest.mark.asyncio
-async def test_allocate_and_prepare_slot_clone(slot_manager):
+async def test_allocate_and_prepare_slot_clone(slot_manager, mock_llama_client):
     # Setup token cache to force a clone (> 10 tokens match)
     source_tokens = [i for i in range(20)]
-    slot_manager._slot_token_cache[0] = source_tokens
+
+    mock_llama_client.get_slots.return_value = [
+        {"id": 0, "prompt": "p0", "generated": "g0", "session_id": "session_A"},
+        {"id": 1, "prompt": "", "generated": "", "state": 0},
+        {"id": 2, "prompt": "", "generated": "", "state": 0},
+    ]
+
+    async def mock_tokenize(text):
+        if text == "p0g0":
+            return source_tokens
+        return []
+
+    mock_llama_client.tokenize = AsyncMock(side_effect=mock_tokenize)
+
     slot_manager._slots[0].session_id = "session_A"
 
     # Target tokens
@@ -109,16 +144,17 @@ async def test_allocate_and_prepare_slot_clone(slot_manager):
     slot_manager._slots[0].last_accessed = 100.0
     slot_manager._slots[2].last_accessed = 200.0
 
-    slot_id, reason = await slot_manager.allocate_and_prepare_slot("session_B", target_tokens)
+    slot_id, reason = await slot_manager.allocate_and_prepare_slot(
+        "session_B", "prompt", target_tokens
+    )
 
     # Should allocate slot 1
     assert slot_id == 1
     assert reason == "match_clone_slot"
 
     # Should have cloned from 0 to 1
-    slot_manager._llama_client.save_slot.assert_called_once()
-    slot_manager._llama_client.restore_slot.assert_called_once()
+    mock_llama_client.save_slot.assert_called_once()
+    mock_llama_client.restore_slot.assert_called_once()
 
     assert slot_manager._session_to_slot["session_B"] == 1
     assert slot_manager._slots[1].session_id == "session_B"
-    assert slot_manager._slot_token_cache[1] == target_tokens
